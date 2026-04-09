@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HomeLab Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9783;</text></svg>">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">H</div>
+      <h1>HomeLab Dashboard</h1>
+    </div>
+    <div class="header-right">
+      <div class="status-dot" title="Connected"></div>
+      <button id="refresh-btn" class="refresh-btn" title="Refresh all">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        Refresh
+      </button>
+      <button id="chat-toggle" class="chat-toggle-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        OpenClaw
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <div class="main-container">
+    <div id="dashboard" class="dashboard">
+
+      <!-- Proxmox Section -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon proxmox">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              <line x1="6" y1="6" x2="6.01" y2="6"></line>
+              <line x1="6" y1="18" x2="6.01" y2="18"></line>
+            </svg>
+          </div>
+          <span class="section-title">Proxmox VE</span>
+        </div>
+        <div id="proxmox-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
+      <!-- Docker Section -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon docker">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 12H2"></path>
+              <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+              <line x1="6" y1="16" x2="6.01" y2="16"></line>
+              <line x1="10" y1="16" x2="10.01" y2="16"></line>
+            </svg>
+          </div>
+          <span class="section-title">Docker Containers</span>
+          <span id="docker-badge" class="section-badge">...</span>
+        </div>
+        <div id="docker-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
+      <!-- Arr Suite Section -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon arr">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="23 7 16 12 23 17 23 7"></polygon>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+            </svg>
+          </div>
+          <span class="section-title">Media Library</span>
+        </div>
+        <div id="arr-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
+      <!-- Streaming Section -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon streaming">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="10 8 16 12 10 16 10 8"></polygon>
+            </svg>
+          </div>
+          <span class="section-title">Active Streams</span>
+          <span id="streaming-badge" class="section-badge">...</span>
+        </div>
+        <div id="streaming-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Chat Panel -->
+    <div id="chat-panel" class="chat-panel">
+      <div class="chat-header">
+        <div class="chat-header-left">
+          <div class="chat-avatar">OC</div>
+          <div>
+            <div class="chat-title">OpenClaw Assistant</div>
+            <div class="chat-status">Online</div>
+          </div>
+        </div>
+        <button id="chat-close" class="chat-close">&times;</button>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-input-area">
+        <textarea id="chat-input" class="chat-input" placeholder="Ask OpenClaw anything..." rows="1"></textarea>
+        <button id="chat-send" class="chat-send" title="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

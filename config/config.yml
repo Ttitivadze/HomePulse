@@ -1,0 +1,21 @@
+# HomeLab Dashboard Configuration
+# Service-level overrides and display settings
+
+dashboard:
+  title: "HomeLab Dashboard"
+  refresh_interval: 30  # seconds
+
+# Toggle which sections are visible
+sections:
+  proxmox: true
+  docker: true
+  arr_suite: true
+  openclaw_chat: true
+
+# Custom labels for Docker containers (optional)
+# Maps container name to a friendly display name
+docker_labels:
+  plex: "Plex Media Server"
+  radarr: "Radarr"
+  sonarr: "Sonarr"
+  tautulli: "Tautulli"
