@@ -1,107 +1,158 @@
-# HomeLab Dashboard
+# HomePulse
 
-A Docker-hosted homepage for your homelab that monitors Proxmox VMs, Docker containers, media library (*arr suite), streaming activity, and includes an integrated OpenClaw AI chat assistant.
+A self-hosted monitoring dashboard for your homelab. See your entire infrastructure at a glance — Proxmox nodes, Docker containers, media libraries, active streams, and an AI chat assistant — all in one dark-themed, mobile-friendly page.
 
-![Dark Theme Dashboard](https://img.shields.io/badge/theme-dark-1e2130) ![Python](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green) ![License: MIT](https://img.shields.io/badge/license-MIT-purple)
 
 ## Features
 
-- **Proxmox VE Monitoring** — View all nodes, VMs, and LXC containers with CPU/RAM usage and uptime
-- **Docker Container Status** — Live container list with resource usage, ports, and status
-- **Media Library Stats** — Radarr (movies), Sonarr (TV shows), and Lidarr (music) integration showing downloaded counts, missing items, and download queue progress
-- **Active Streaming** — Tautulli/Plex integration showing who's watching what, with quality and transcode info
-- **OpenClaw Chat** — Embedded AI chat panel to interact with your self-hosted OpenClaw instance while monitoring your homelab
+- **Proxmox VE** — Nodes, VMs, and LXC containers with live CPU/RAM bars and uptime
+- **Docker** — Every container with status, resource usage, ports, and friendly display names
+- **Media Library** — Radarr (movies), Sonarr (TV), Lidarr (music) showing downloaded, requested, and missing counts plus download queue progress
+- **Active Streams** — Jellyfin, Plex (direct), or Tautulli — see who's watching what, transcode status, and playback progress
+- **OpenClaw Chat** — Slide-out AI chat panel with streaming token display, connected to your self-hosted OpenClaw instance
+- **Single-request refresh** — One API call fetches everything in parallel; 30-second auto-refresh cycle
+- **Per-section retry** — If one service is down, retry just that section without reloading
+- **Mobile-ready** — Responsive grid, dark theme, iOS home screen support
 
 ## Quick Start
 
-### 1. Clone and configure
-
 ```bash
-git clone <repo-url> homelab-dashboard
-cd homelab-dashboard
-cp .env.example .env
+git clone https://github.com/Ttitivadze/ClaudeCode.git homepulse
+cd homepulse
+cp .env.example .env     # Edit with your service URLs and API keys
+docker compose up -d     # Dashboard at http://your-server:8450
 ```
 
-Edit `.env` with your service URLs and API keys.
-
-### 2. Deploy with Docker Compose
-
-```bash
-docker compose up -d
-```
-
-The dashboard will be available at `http://your-host:8450`.
+Access from any device on your LAN: `http://<server-ip>:8450`
 
 ## Configuration
 
 ### Environment Variables (`.env`)
 
-| Variable | Description | Required |
-|---|---|---|
-| `PROXMOX_HOST` | Proxmox VE URL (e.g., `https://192.168.1.100:8006`) | For Proxmox |
-| `PROXMOX_USER` | API user (e.g., `root@pam`) | For Proxmox |
-| `PROXMOX_TOKEN_NAME` | API token name | For Proxmox |
-| `PROXMOX_TOKEN_VALUE` | API token value | For Proxmox |
-| `PROXMOX_VERIFY_SSL` | Verify SSL certificate (`true`/`false`) | No |
-| `RADARR_URL` | Radarr URL | For Radarr |
-| `RADARR_API_KEY` | Radarr API key (Settings > General) | For Radarr |
-| `SONARR_URL` | Sonarr URL | For Sonarr |
-| `SONARR_API_KEY` | Sonarr API key | For Sonarr |
-| `LIDARR_URL` | Lidarr URL | For Lidarr |
-| `LIDARR_API_KEY` | Lidarr API key | For Lidarr |
-| `TAUTULLI_URL` | Tautulli URL | For Streaming |
-| `TAUTULLI_API_KEY` | Tautulli API key | For Streaming |
-| `OPENCLAW_URL` | OpenClaw instance URL | For Chat |
-| `OPENCLAW_API_KEY` | OpenClaw API key | For Chat |
-| `OPENCLAW_MODEL` | Model to use (default: `default`) | No |
-| `REFRESH_INTERVAL` | Auto-refresh interval in seconds (default: `30`) | No |
+All integrations are optional — configure only the services you use.
+
+| Variable | Description |
+|---|---|
+| **Proxmox** | |
+| `PROXMOX_HOST` | Proxmox VE URL (e.g. `https://192.168.1.100:8006`) |
+| `PROXMOX_USER` | API user (default: `root@pam`) |
+| `PROXMOX_TOKEN_NAME` | API token name |
+| `PROXMOX_TOKEN_VALUE` | API token value |
+| `PROXMOX_VERIFY_SSL` | Verify SSL cert (`true`/`false`, default: `false`) |
+| **Radarr / Sonarr / Lidarr** | |
+| `RADARR_URL`, `RADARR_API_KEY` | Radarr instance |
+| `SONARR_URL`, `SONARR_API_KEY` | Sonarr instance |
+| `LIDARR_URL`, `LIDARR_API_KEY` | Lidarr instance |
+| **Streaming** | |
+| `JELLYFIN_URL`, `JELLYFIN_API_KEY` | Jellyfin (direct sessions API) |
+| `PLEX_URL`, `PLEX_TOKEN` | Plex (direct sessions API) |
+| `TAUTULLI_URL`, `TAUTULLI_API_KEY` | Tautulli (richer Plex stats) |
+| **Chat** | |
+| `OPENCLAW_URL`, `OPENCLAW_API_KEY` | OpenClaw instance |
+| `OPENCLAW_MODEL` | Model to use (default: `default`) |
+| **Dashboard** | |
+| `REFRESH_INTERVAL` | Auto-refresh in seconds (default: `30`) |
+
+> **Tip:** Use either Plex direct *or* Tautulli for streaming — not both — to avoid duplicate sessions.
+
+### Display Config (`config/config.yml`)
+
+Toggle dashboard sections and set friendly Docker container names:
+
+```yaml
+dashboard:
+  title: "HomePulse"
+  refresh_interval: 30
+
+sections:
+  proxmox: true
+  docker: true
+  arr_suite: true
+  openclaw_chat: true
+
+docker_labels:
+  plex: "Plex Media Server"
+  radarr: "Radarr"
+```
 
 ### Getting API Keys
 
-- **Proxmox**: Datacenter > Permissions > API Tokens > Add
-- **Radarr/Sonarr/Lidarr**: Settings > General > API Key
-- **Tautulli**: Settings > Web Interface > API Key
-- **OpenClaw**: Your OpenClaw instance settings
+| Service | Where to find it |
+|---------|-----------------|
+| Proxmox | Datacenter > Permissions > API Tokens > Add |
+| Radarr/Sonarr/Lidarr | Settings > General > API Key |
+| Jellyfin | Dashboard > API Keys > Add |
+| Plex | https://www.plex.tv/claim/ or Plex settings |
+| Tautulli | Settings > Web Interface > API Key |
 
-## Architecture
+## Development
 
-```
-homelab-dashboard/
-├── docker-compose.yml       # Container deployment
-├── Dockerfile               # Python 3.12 slim image
-├── requirements.txt         # Python dependencies
-├── .env.example             # Configuration template
-├── config/
-│   └── config.yml           # Display settings
-└── backend/
-    ├── main.py              # FastAPI app entry point
-    ├── config.py            # Settings from env vars
-    ├── integrations/
-    │   ├── proxmox.py       # Proxmox VE API client
-    │   ├── docker_int.py    # Docker socket integration
-    │   ├── arr.py           # Radarr/Sonarr/Lidarr/Tautulli
-    │   └── openclaw.py      # OpenClaw chat proxy
-    └── static/
-        ├── index.html       # Dashboard SPA
-        ├── css/style.css    # Dark theme styles
-        └── js/app.js        # Frontend application
+### Run locally (without Docker)
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## API Endpoints
+### Run tests
 
-| Endpoint | Description |
-|---|---|
-| `GET /` | Dashboard UI |
-| `GET /api/health` | Health check |
-| `GET /api/proxmox/status` | Proxmox nodes, VMs, containers |
-| `GET /api/docker/containers` | Docker container list with stats |
-| `GET /api/arr/radarr` | Radarr movie stats and queue |
-| `GET /api/arr/sonarr` | Sonarr TV show stats and queue |
-| `GET /api/arr/lidarr` | Lidarr music stats and queue |
-| `GET /api/arr/streaming` | Active Plex/Tautulli streams |
-| `GET /api/openclaw/status` | OpenClaw connection status |
-| `POST /api/openclaw/chat` | Send chat message to OpenClaw |
-| `POST /api/openclaw/chat/stream` | Streaming chat response |
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests/ -v
+```
+
+### Project structure
+
+```
+backend/
+  main.py                # FastAPI app, CORS, /api/dashboard
+  config.py              # Settings from env + YAML
+  cache.py               # 15-second TTL cache
+  integrations/
+    proxmox.py           # Proxmox VE (parallel node fetches)
+    docker_int.py        # Docker socket (parallel stats)
+    arr.py               # Radarr/Sonarr/Lidarr + Jellyfin/Plex/Tautulli
+    openclaw.py          # Chat proxy (streaming + non-streaming)
+  static/
+    index.html           # SPA shell
+    js/app.js            # Frontend logic
+    css/style.css        # Dark theme
+config/config.yml        # Display settings
+tests/                   # 24 pytest tests
+```
+
+## API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check (Docker HEALTHCHECK target) |
+| GET | `/api/dashboard` | All sections in one concurrent request |
+| GET | `/api/proxmox/status` | Proxmox nodes, VMs, LXC |
+| GET | `/api/docker/containers` | Docker containers with stats |
+| GET | `/api/arr/radarr` | Movie library + queue |
+| GET | `/api/arr/sonarr` | TV library + queue |
+| GET | `/api/arr/lidarr` | Music library + queue |
+| GET | `/api/arr/streaming` | Active streams |
+| GET | `/api/openclaw/status` | OpenClaw online/offline |
+| POST | `/api/openclaw/chat` | Chat (JSON response) |
+| POST | `/api/openclaw/chat/stream` | Chat (SSE streaming) |
+
+## Docker Notes
+
+- **Healthcheck** built into both Dockerfile and Compose
+- **Log rotation**: 3 x 10MB max to prevent disk bloat
+- **Memory limit**: 512MB (configurable in `docker-compose.yml`)
+- **Docker socket**: Mounted read-only for container monitoring
+- **Port**: Host 8450 -> Container 8000
+
+## Versioning
+
+HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
+
+- `0.x.y` — Pre-release development
+- `1.0.0` — First stable public release
 
 ## License
 

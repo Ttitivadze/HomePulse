@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 
-logger = logging.getLogger("homelab.docker")
+logger = logging.getLogger("homepulse.docker")
 
 router = APIRouter()
 

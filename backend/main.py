@@ -20,7 +20,7 @@ from backend.integrations.arr import (
 )
 from backend.integrations.openclaw import router as openclaw_router
 
-logger = logging.getLogger("homelab")
+logger = logging.getLogger("homepulse")
 
 
 @asynccontextmanager
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
         configured.append("OpenClaw")
 
     logger.info(
-        "HomeLab Dashboard starting — configured services: %s",
+        "HomePulse v0.9.0 starting — configured services: %s",
         ", ".join(configured) if configured else "(none)",
     )
     if settings.warnings:
@@ -58,10 +58,10 @@ async def lifespan(app: FastAPI):
 
     if arr._client is not None and not arr._client.is_closed:
         await arr._client.aclose()
-    logger.info("HomeLab Dashboard stopped")
+    logger.info("HomePulse stopped")
 
 
-app = FastAPI(title="HomeLab Dashboard", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="HomePulse", version="0.9.0", lifespan=lifespan)
 
 # CORS — allow any origin so the dashboard works from any device on the LAN
 app.add_middleware(

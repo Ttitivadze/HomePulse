@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from backend.config import settings
 from backend.integrations.arr import _get_client as _get_shared_client
 
-logger = logging.getLogger("homelab.openclaw")
+logger = logging.getLogger("homepulse.openclaw")
 
 router = APIRouter()
 

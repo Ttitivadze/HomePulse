@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from backend.config import settings
 from backend import cache
 
-logger = logging.getLogger("homelab.arr")
+logger = logging.getLogger("homepulse.arr")
 
 router = APIRouter()
 

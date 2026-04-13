@@ -1,8 +1,8 @@
-# HomeLab Dashboard Configuration
+# HomePulse Configuration
 # Service-level overrides and display settings
 
 dashboard:
-  title: "HomeLab Dashboard"
+  title: "HomePulse"
   refresh_interval: 30  # seconds
 
 # Toggle which sections are visible

@@ -1,8 +1,8 @@
-# CLAUDE.md - HomeLab Dashboard
+# CLAUDE.md - HomePulse
 
 ## Project Overview
 
-A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), and an embedded OpenClaw AI chat assistant.
+HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), and an embedded OpenClaw AI chat assistant.
 
 ## Tech Stack
 
@@ -12,7 +12,8 @@ A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI 
 - **HTTP Client**: httpx (async, shared client for connection reuse)
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`)
 - **Testing**: pytest + pytest-asyncio, httpx test client
-- **Logging**: Python `logging` module under the `homelab.*` namespace
+- **Logging**: Python `logging` module under the `homepulse.*` namespace
+- **Versioning**: Semantic versioning via `VERSION` file (currently 0.9.0)
 
 ## Repository Structure
 
@@ -41,6 +42,7 @@ A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI 
 │   ├── test_docker.py       # Docker endpoint tests
 │   ├── test_openclaw.py     # OpenClaw endpoint tests
 │   └── test_cache.py        # TTL cache unit tests
+├── VERSION                  # Semantic version (0.9.0)
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, cache from Docker image
 ├── .gitignore               # Python, IDE, OS artifacts
@@ -116,8 +118,8 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **Router-per-integration**: Each integration is a separate module with its own `APIRouter`, mounted in `main.py` with a prefix
 - **Settings singleton**: `backend/config.py` exposes a `settings` object with instance attributes — import it, don't instantiate `Settings` again. Instance-based `__init__` allows overriding in tests. Loads YAML display config and validates env vars at startup.
 - **Graceful degradation**: Integrations return `{"configured": False}` when unconfigured, or `{"error": "..."}` on failure — never crash the app
-- **Error handling**: Use `fastapi.HTTPException` for individual API errors; the `/api/dashboard` endpoint wraps exceptions per-section
-- **Logging**: All modules use `logging.getLogger("homelab.<module>")`. Errors and connection failures are logged so `docker logs` is useful for debugging.
+- **Error handling**: Use `fastapi.HTTPException` for individual API errors; the `/api/dashboard` endpoint wraps exceptions per-section. Error messages sent to clients are generic (no internal paths or stack traces); details are logged server-side.
+- **Logging**: All modules use `logging.getLogger("homepulse.<module>")`. Errors and connection failures are logged so `docker logs` is useful for debugging.
 
 ### Frontend
 
@@ -177,6 +179,13 @@ Key patterns:
 - `config/config.yml` is also mounted read-only
 - The container runs as root (required for Docker socket access)
 - Port mapping: host 8450 -> container 8000
+
+## Versioning
+
+HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
+
+- `0.x.y` — Pre-release development
+- `1.0.0` — First stable public release
 
 ## Important Warnings
 

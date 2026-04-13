@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from backend.config import settings
 from backend import cache
 
-logger = logging.getLogger("homelab.proxmox")
+logger = logging.getLogger("homepulse.proxmox")
 
 router = APIRouter()
 

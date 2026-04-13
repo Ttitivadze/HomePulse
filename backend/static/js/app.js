@@ -1,5 +1,5 @@
 // ============================================
-// HomeLab Dashboard - Main Application
+// HomePulse - Main Application
 // ============================================
 
 const App = {

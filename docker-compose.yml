@@ -1,7 +1,7 @@
 services:
-  homelab-dashboard:
+  homepulse:
     build: .
-    container_name: homelab-dashboard
+    container_name: homepulse
     restart: unless-stopped
     ports:
       - "8450:8000"

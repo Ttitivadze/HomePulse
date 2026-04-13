@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logger = logging.getLogger("homelab.config")
+logger = logging.getLogger("homepulse.config")
 
 
 def _safe_int(value: str, default: int, name: str) -> tuple[int, str | None]:
@@ -114,7 +114,7 @@ class Settings:
 
     @property
     def dashboard_title(self) -> str:
-        return self.DISPLAY.get("dashboard", {}).get("title", "HomeLab Dashboard")
+        return self.DISPLAY.get("dashboard", {}).get("title", "HomePulse")
 
 
 settings = Settings()
