@@ -270,3 +270,34 @@ HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored
 - If both `PLEX_URL` and `TAUTULLI_URL` are set, you may see duplicate streaming sessions — use one or the other for Plex
 - Service config overrides in the admin panel take precedence over `.env` — changes require a restart to take effect in the running `settings` singleton
 - The SQLite database in `data/` contains user password hashes — treat it with the same care as `.env`
+
+## Version Bump Checklist
+
+When bumping the version, update ALL of these:
+1. `VERSION` file (the source of truth)
+2. `backend/main.py` fallback version string
+3. `README.md` changelog section (add new entry at top) + versioning list
+4. `CLAUDE.md` version references (currently lines mentioning version number — use replace_all)
+
+## Design Decisions & Context
+
+These are deliberate choices made during development. Don't revert without discussion:
+
+- **Login is timing-safe**: `auth.py` uses a dummy bcrypt hash for non-existent users so login time doesn't reveal whether a username exists
+- **Setup endpoint has TOCTOU protection**: `auth.py` wraps the INSERT in try/except to handle the race between the existence check and insert
+- **Two escape functions exist for a reason**: `escapeHtml()` for text content, `escapeAttr()` for HTML attribute contexts (escapes quotes). Both in `utils.js`, delegated from app.js and settings.js
+- **Color values are regex-validated on the backend**: `settings.py` validates `#hex`, `rgb()`, and `hsl()` patterns before storing. This prevents CSS injection via the `setProperty` calls in the frontend
+- **Section order is validated against an allowlist**: Only `["proxmox", "docker", "arr", "streaming"]` are accepted
+- **Proxmox and arr use different client patterns but same principle**: Both reuse a module-level `httpx.AsyncClient`, closed in the lifespan shutdown. Proxmox client includes base_url and auth headers; arr client is generic.
+- **Docker stats concurrency is already correct**: `docker_int.py` uses `asyncio.gather` with `asyncio.to_thread` per container — they run in parallel, not sequentially. No need to refactor.
+- **Chat streaming uses a fast-path render**: During streaming, only the last message's `textContent` is updated (no innerHTML rebuild). Full rebuild happens only when a new message is added.
+- **SQLite uses a persistent connection**: `database.py` reuses a single connection with `check_same_thread=False`. The async `_lock` protects writes; reads are lock-free (safe under WAL mode).
+
+## Known Deferred Items
+
+These were identified but intentionally deferred — not forgotten:
+
+- **No rate limiting on login**: Brute force is possible. Would need `slowapi` or similar middleware. Low risk on a LAN-only homelab.
+- **No CSRF protection**: State-changing endpoints (PUT/DELETE) don't use CSRF tokens. Low risk since CORS restricts origins and JWT is in Authorization header (not cookies).
+- **Streaming session code duplication**: `arr.py` has similar fetch/parse patterns for Jellyfin, Plex, and Tautulli (~150 lines). Could be consolidated but works correctly as-is.
+- **Settings singleton doesn't hot-reload DB overrides**: After changing service configs via the admin panel, the `settings` object in `config.py` still holds the old values until restart. This is documented in the admin panel ("Restart to apply").
