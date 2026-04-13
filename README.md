@@ -6,6 +6,16 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v1.1.2
+- **Performance**: Persistent httpx client for Proxmox (reuse TCP/TLS connections across fetches)
+- **Performance**: Persistent SQLite connection (eliminates per-query open/close overhead)
+- **Performance**: Chat streaming renders only the last message in-place instead of full DOM rebuild
+- **Performance**: Cache auto-cleans expired entries on read
+- **UX**: 15s request timeout on admin API calls (prevents hanging UI)
+- **UX**: Loading skeletons shown while Services/Users settings tabs fetch data
+- **UX**: Mobile portrait optimizations — icon-only header, 480px breakpoint, 44px touch targets, safe-area-inset for notched phones
+- **Cleanup**: Shared `utils.js` for escapeHtml/escapeAttr, DB username index, module-level imports
+
 ### v1.1.1
 - **Security**: Fix CORS to allow PUT/DELETE methods (admin settings were blocked)
 - **Security**: Fix XSS — add attribute-safe escaping for quotes in settings panel
@@ -196,6 +206,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `1.1.2` — Performance optimizations, mobile UX, code cleanup
 - `1.1.1` — Security hardening, input validation, XSS fixes
 - `1.1.0` — Account system, admin settings panel, UI customization
 - `1.0.0` — First stable public release
