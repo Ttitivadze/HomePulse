@@ -13,7 +13,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`)
 - **Testing**: pytest + pytest-asyncio, httpx test client
 - **Logging**: Python `logging` module under the `homepulse.*` namespace
-- **Versioning**: Semantic versioning via `VERSION` file (currently 0.9.0)
+- **Versioning**: Semantic versioning via `VERSION` file (currently 1.0.0)
 
 ## Repository Structure
 
@@ -42,7 +42,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── test_docker.py       # Docker endpoint tests
 │   ├── test_openclaw.py     # OpenClaw endpoint tests
 │   └── test_cache.py        # TTL cache unit tests
-├── VERSION                  # Semantic version (0.9.0)
+├── VERSION                  # Semantic version (1.0.0)
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, cache from Docker image
 ├── .gitignore               # Python, IDE, OS artifacts
@@ -177,15 +177,14 @@ Key patterns:
 - **`.dockerignore`**: Excludes tests, .git, cache, and docs from the image
 - The Docker socket is mounted read-only (`/var/run/docker.sock:/var/run/docker.sock:ro`) for container monitoring
 - `config/config.yml` is also mounted read-only
-- The container runs as root (required for Docker socket access)
+- The container runs as a non-root `homepulse` user (Docker socket access requires group-add at runtime)
 - Port mapping: host 8450 -> container 8000
 
 ## Versioning
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
 
-- `0.x.y` — Pre-release development
-- `1.0.0` — First stable public release
+- `1.0.0` — First stable public release (current)
 
 ## Important Warnings
 
