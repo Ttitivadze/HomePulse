@@ -11,6 +11,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
 COPY config/ ./config/
+COPY VERSION .
+
+# Run as non-root user (note: Docker socket access requires the user to be in
+# the docker group, or the socket GID must be passed via --group-add at runtime)
+RUN useradd -r -s /bin/false homepulse
+USER homepulse
 
 EXPOSE 8000
 

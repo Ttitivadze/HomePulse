@@ -3,7 +3,7 @@ import logging
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from backend.config import settings
 from backend.integrations.arr import _get_client as _get_shared_client
@@ -14,12 +14,19 @@ router = APIRouter()
 
 
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: str = Field(..., max_length=20)
+    content: str = Field(..., max_length=32000)
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v):
+        if v not in ("user", "assistant", "system"):
+            raise ValueError("role must be user, assistant, or system")
+        return v
 
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(..., max_length=100)
 
 
 @router.get("/status")
@@ -100,18 +107,25 @@ async def openclaw_chat_stream(request: ChatRequest):
             "stream": True,
         }
 
-        client = await _get_shared_client()
-        async with client.stream(
-            "POST",
-            f"{settings.OPENCLAW_URL}/api/chat/completions",
-            headers={
-                "Authorization": f"Bearer {settings.OPENCLAW_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=120.0,
-        ) as resp:
-            async for chunk in resp.aiter_text():
-                yield chunk
+        try:
+            client = await _get_shared_client()
+            async with client.stream(
+                "POST",
+                f"{settings.OPENCLAW_URL}/api/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.OPENCLAW_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=120.0,
+            ) as resp:
+                if resp.status_code != 200:
+                    yield f"data: {{}}\n\n"
+                    return
+                async for chunk in resp.aiter_text():
+                    yield chunk
+        except Exception as e:
+            logger.exception("OpenClaw stream failed")
+            yield f"data: {{}}\n\n"
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")

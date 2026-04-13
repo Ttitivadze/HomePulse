@@ -38,7 +38,7 @@ async def fetch_docker_data() -> dict:
         return {"configured": False, "containers": []}
 
     try:
-        containers = client.containers.list(all=True)
+        containers = await asyncio.to_thread(client.containers.list, all=True)
 
         # Build base info for every container
         container_info = []
