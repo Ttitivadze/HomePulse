@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
 from backend.integrations.arr import (
     fetch_radarr_data,
@@ -72,8 +72,147 @@ async def test_streaming_not_configured():
     with patch("backend.integrations.arr.settings") as mock_settings:
         mock_settings.TAUTULLI_URL = ""
         mock_settings.TAUTULLI_API_KEY = ""
+        mock_settings.JELLYFIN_URL = ""
+        mock_settings.JELLYFIN_API_KEY = ""
+        mock_settings.PLEX_URL = ""
+        mock_settings.PLEX_TOKEN = ""
         result = await fetch_streaming_data()
     assert result == {"configured": False}
+
+
+@pytest.mark.asyncio
+async def test_streaming_jellyfin_sessions():
+    """Jellyfin sessions should be parsed into normalized session objects."""
+    from backend.integrations.arr import _fetch_jellyfin_sessions
+
+    jellyfin_resp = [
+        {
+            "UserName": "Alice",
+            "Client": "Jellyfin Web",
+            "NowPlayingItem": {
+                "Name": "Pilot",
+                "SeriesName": "Breaking Bad",
+                "ParentIndexNumber": 1,
+                "IndexNumber": 1,
+                "Type": "Episode",
+                "RunTimeTicks": 36000000000,
+                "MediaStreams": [{"DisplayTitle": "1080p"}],
+            },
+            "PlayState": {"PositionTicks": 18000000000, "IsPaused": False},
+            "TranscodingInfo": None,
+        },
+        {
+            "UserName": "Bob",
+            "Client": "Jellyfin Android",
+            "PlayState": {},
+            # No NowPlayingItem → should be skipped
+        },
+    ]
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = jellyfin_resp
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_resp
+
+    with (
+        patch("backend.integrations.arr.settings") as mock_settings,
+        patch("backend.integrations.arr._get_client", return_value=mock_client),
+    ):
+        mock_settings.JELLYFIN_URL = "http://jellyfin:8096"
+        mock_settings.JELLYFIN_API_KEY = "key"
+        sessions = await _fetch_jellyfin_sessions()
+
+    assert len(sessions) == 1
+    s = sessions[0]
+    assert s["user"] == "Alice"
+    assert "Breaking Bad" in s["title"]
+    assert "S01E01" in s["title"]
+    assert s["source"] == "Jellyfin"
+    assert s["state"] == "playing"
+    assert s["progress"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_streaming_plex_sessions():
+    """Plex direct sessions should be parsed into normalized session objects."""
+    from backend.integrations.arr import _fetch_plex_sessions
+
+    plex_resp = {
+        "MediaContainer": {
+            "Metadata": [
+                {
+                    "title": "Ozymandias",
+                    "grandparentTitle": "Breaking Bad",
+                    "parentIndex": 5,
+                    "index": 14,
+                    "type": "episode",
+                    "duration": 60000,
+                    "viewOffset": 30000,
+                    "User": {"title": "Charlie"},
+                    "Player": {"product": "Plex Web", "state": "playing"},
+                    "Media": [{"videoResolution": "1080", "Part": [{"decision": "directplay"}]}],
+                },
+            ]
+        }
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = plex_resp
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_resp
+
+    with (
+        patch("backend.integrations.arr.settings") as mock_settings,
+        patch("backend.integrations.arr._get_client", return_value=mock_client),
+    ):
+        mock_settings.PLEX_URL = "http://plex:32400"
+        mock_settings.PLEX_TOKEN = "token"
+        sessions = await _fetch_plex_sessions()
+
+    assert len(sessions) == 1
+    s = sessions[0]
+    assert s["user"] == "Charlie"
+    assert "Breaking Bad" in s["title"]
+    assert "S05E14" in s["title"]
+    assert s["source"] == "Plex"
+    assert s["progress"] == 50.0
+    assert s["transcode"] == "direct play"
+
+
+@pytest.mark.asyncio
+async def test_streaming_merges_multiple_sources():
+    """fetch_streaming_data should merge sessions from all configured sources."""
+    with (
+        patch("backend.integrations.arr.settings") as mock_settings,
+        patch(
+            "backend.integrations.arr._fetch_jellyfin_sessions",
+            new_callable=AsyncMock,
+            return_value=[{"user": "A", "source": "Jellyfin", "title": "Movie A"}],
+        ),
+        patch(
+            "backend.integrations.arr._fetch_tautulli_sessions",
+            new_callable=AsyncMock,
+            return_value=[{"user": "B", "source": "Tautulli", "title": "Movie B"}],
+        ),
+    ):
+        mock_settings.JELLYFIN_URL = "http://jellyfin:8096"
+        mock_settings.JELLYFIN_API_KEY = "key"
+        mock_settings.PLEX_URL = ""
+        mock_settings.PLEX_TOKEN = ""
+        mock_settings.TAUTULLI_URL = "http://tautulli:8181"
+        mock_settings.TAUTULLI_API_KEY = "key"
+        result = await fetch_streaming_data()
+
+    assert result["configured"] is True
+    assert result["stream_count"] == 2
+    assert result["sessions"][0]["source"] == "Jellyfin"
+    assert result["sessions"][1]["source"] == "Tautulli"
 
 
 @pytest.mark.asyncio

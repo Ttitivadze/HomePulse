@@ -491,6 +491,11 @@ body {
   flex-shrink: 0;
 }
 
+.stream-indicator.paused {
+  background: var(--yellow);
+  animation: none;
+}
+
 .stream-info { flex: 1; min-width: 0; }
 
 .stream-title {

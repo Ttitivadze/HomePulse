@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), Plex (via Tautulli), and an embedded OpenClaw AI chat assistant.
+A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), and an embedded OpenClaw AI chat assistant.
 
 ## Tech Stack
 
@@ -23,7 +23,7 @@ A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI 
 │   ├── integrations/        # One module per external service
 │   │   ├── proxmox.py       # Proxmox VE API client (parallel node fetches)
 │   │   ├── docker_int.py    # Docker socket integration (parallel stats)
-│   │   ├── arr.py           # Radarr/Sonarr/Lidarr/Tautulli (shared client)
+│   │   ├── arr.py           # Radarr/Sonarr/Lidarr + streaming (Jellyfin/Plex/Tautulli)
 │   │   └── openclaw.py      # OpenClaw chat proxy (standard + streaming)
 │   └── static/              # Frontend assets served by FastAPI
 │       ├── index.html
@@ -85,7 +85,7 @@ pytest tests/ -v
 | GET | `/api/arr/radarr` | Movie library stats + download queue |
 | GET | `/api/arr/sonarr` | TV show stats + download queue |
 | GET | `/api/arr/lidarr` | Music library stats + download queue |
-| GET | `/api/arr/streaming` | Active Plex streams (Tautulli) |
+| GET | `/api/arr/streaming` | Active streams (Jellyfin, Plex, and/or Tautulli) |
 | GET | `/api/openclaw/status` | OpenClaw connection check |
 | POST | `/api/openclaw/chat` | Chat message (JSON response) |
 | POST | `/api/openclaw/chat/stream` | Chat message (streaming SSE response) |

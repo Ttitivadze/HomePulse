@@ -27,7 +27,15 @@ class Settings:
         self.LIDARR_URL: str = os.getenv("LIDARR_URL", "")
         self.LIDARR_API_KEY: str = os.getenv("LIDARR_API_KEY", "")
 
-        # Tautulli
+        # Jellyfin (direct streaming sessions)
+        self.JELLYFIN_URL: str = os.getenv("JELLYFIN_URL", "")
+        self.JELLYFIN_API_KEY: str = os.getenv("JELLYFIN_API_KEY", "")
+
+        # Plex (direct streaming sessions)
+        self.PLEX_URL: str = os.getenv("PLEX_URL", "")
+        self.PLEX_TOKEN: str = os.getenv("PLEX_TOKEN", "")
+
+        # Tautulli (Plex monitoring wrapper — alternative to direct Plex)
         self.TAUTULLI_URL: str = os.getenv("TAUTULLI_URL", "")
         self.TAUTULLI_API_KEY: str = os.getenv("TAUTULLI_API_KEY", "")
 

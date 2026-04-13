@@ -319,7 +319,7 @@ const App = {
       return;
     }
     if (!data.configured) {
-      container.innerHTML = this.notConfigured('Streaming', 'Configure Tautulli API key in .env');
+      container.innerHTML = this.notConfigured('Streaming', 'Configure Jellyfin, Plex, or Tautulli in .env');
       badge.textContent = '0';
       return;
     }
@@ -333,10 +333,10 @@ const App = {
 
     container.innerHTML = data.sessions.map(s => `
       <div class="stream-card">
-        <div class="stream-indicator"></div>
+        <div class="stream-indicator ${s.state === 'paused' ? 'paused' : ''}"></div>
         <div class="stream-info">
           <div class="stream-title">${s.title}</div>
-          <div class="stream-meta">${s.quality} &middot; ${s.transcode} &middot; ${s.player}</div>
+          <div class="stream-meta">${s.source ? s.source + ' &middot; ' : ''}${s.quality} &middot; ${s.transcode} &middot; ${s.player}</div>
         </div>
         <div>
           <div class="stream-user">${s.user}</div>
