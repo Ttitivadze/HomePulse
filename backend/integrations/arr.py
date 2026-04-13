@@ -241,9 +241,9 @@ async def _fetch_jellyfin_sessions() -> list:
         title = now_playing.get("Name", "Unknown")
         series = now_playing.get("SeriesName")
         if series:
-            ep = now_playing.get("ParentIndexNumber", "")
-            ep_num = now_playing.get("IndexNumber", "")
-            ep_tag = f"S{ep:02d}E{ep_num:02d}" if ep and ep_num else ""
+            ep = now_playing.get("ParentIndexNumber")
+            ep_num = now_playing.get("IndexNumber")
+            ep_tag = f"S{int(ep):02d}E{int(ep_num):02d}" if ep is not None and ep_num is not None else ""
             title = f"{series} - {ep_tag} - {title}" if ep_tag else f"{series} - {title}"
 
         play_state = s.get("PlayState", {})
@@ -292,9 +292,9 @@ async def _fetch_plex_sessions() -> list:
         title = item.get("title", "Unknown")
         grandparent = item.get("grandparentTitle", "")
         if grandparent:
-            season = item.get("parentIndex", "")
-            episode = item.get("index", "")
-            ep_tag = f"S{int(season):02d}E{int(episode):02d}" if season and episode else ""
+            season = item.get("parentIndex")
+            episode = item.get("index")
+            ep_tag = f"S{int(season):02d}E{int(episode):02d}" if season is not None and episode is not None else ""
             title = f"{grandparent} - {ep_tag} - {title}" if ep_tag else f"{grandparent} - {title}"
 
         duration = int(item.get("duration", 1)) or 1
@@ -305,7 +305,8 @@ async def _fetch_plex_sessions() -> list:
         if item.get("TranscodeSession"):
             transcode = "transcode"
         elif item.get("Media"):
-            parts = item["Media"][0].get("Part", [{}])
+            media = item["Media"]
+            parts = media[0].get("Part", []) if media else []
             decision = parts[0].get("decision", "") if parts else ""
             if decision == "transcode":
                 transcode = "transcode"
@@ -388,12 +389,12 @@ async def fetch_streaming_data() -> dict:
     for label, res in zip(labels, results):
         if isinstance(res, Exception):
             logger.warning("Streaming source %s failed: %s", label, res)
-            errors.append(f"{label}: {res}")
+            errors.append(label)
         else:
             sessions.extend(res)
 
     if not sessions and errors:
-        return {"configured": True, "error": "; ".join(errors)}
+        return {"configured": True, "error": f"Cannot connect to {', '.join(errors)}"}
 
     result = {
         "configured": True,

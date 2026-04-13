@@ -3,11 +3,12 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.integrations.proxmox import router as proxmox_router, fetch_proxmox_data
 from backend.integrations.docker_int import router as docker_router, fetch_docker_data
@@ -67,11 +68,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HomePulse", version=__version__, lifespan=lifespan)
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORS — allow any origin so the dashboard works from any device on the LAN
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 

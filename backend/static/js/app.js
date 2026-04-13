@@ -151,6 +151,7 @@ const App = {
   },
 
   renderNode(node) {
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
     const memPercent = node.mem_total > 0 ? Math.round((node.mem_used / node.mem_total) * 100) : 0;
     const vms = node.vms.map(vm => this.renderVmCard(vm, 'VM')).join('');
     const cts = node.containers.map(ct => this.renderVmCard(ct, 'LXC')).join('');
@@ -162,8 +163,8 @@ const App = {
       <div class="node-card">
         <div class="node-header">
           <div class="node-name">
-            <span class="status-badge ${node.status === 'online' ? 'running' : 'stopped'}">${node.status}</span>
-            ${node.name}
+            <span class="status-badge ${node.status === 'online' ? 'running' : 'stopped'}">${esc(node.status)}</span>
+            ${esc(node.name)}
           </div>
           <div class="node-stats">
             <div><span class="node-stat-label">Guests</span><br><span class="node-stat-value">${runningGuests}/${totalGuests}</span></div>
@@ -186,15 +187,16 @@ const App = {
   },
 
   renderVmCard(item, type) {
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
     const memPercent = item.maxmem > 0 ? Math.round((item.mem / item.maxmem) * 100) : 0;
     return `
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-name">${item.name}</div>
-            <div class="card-id">${type} ${item.vmid}</div>
+            <div class="card-name">${esc(item.name)}</div>
+            <div class="card-id">${type} ${esc(item.vmid)}</div>
           </div>
-          <span class="status-badge ${item.status}">${item.status}</span>
+          <span class="status-badge ${item.status}">${esc(item.status)}</span>
         </div>
         ${item.status === 'running' ? `
         <div class="card-stats">
@@ -224,17 +226,18 @@ const App = {
   },
 
   renderDockerCard(c) {
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
     const memPercent = c.mem_limit > 0 ? Math.round((c.mem_usage / c.mem_limit) * 100) : 0;
-    const ports = c.ports.length ? `<div class="card-id" style="margin-top:4px">${c.ports.join(', ')}</div>` : '';
+    const ports = c.ports.length ? `<div class="card-id" style="margin-top:4px">${c.ports.map(p => esc(p)).join(', ')}</div>` : '';
     return `
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-name">${c.display_name || c.name}</div>
-            <div class="card-id">${c.display_name && c.display_name !== c.name ? c.name + ' &middot; ' : ''}${c.image}</div>
+            <div class="card-name">${esc(c.display_name || c.name)}</div>
+            <div class="card-id">${c.display_name && c.display_name !== c.name ? esc(c.name) + ' &middot; ' : ''}${esc(c.image)}</div>
             ${ports}
           </div>
-          <span class="status-badge ${c.status}">${c.status}</span>
+          <span class="status-badge ${c.status}">${esc(c.status)}</span>
         </div>
         ${c.status === 'running' ? `
         <div class="card-stats">
@@ -291,13 +294,14 @@ const App = {
     ];
 
     if (allQueue.length > 0) {
+      const esc = (s) => this.escapeHtml(String(s ?? ''));
       html += `<div class="queue-section">
         <div class="queue-title">Download Queue (${allQueue.length})</div>
         ${allQueue.map(q => `
           <div class="queue-item">
             <div class="queue-item-info">
-              <div class="queue-item-title">${q.title}</div>
-              <div class="queue-item-meta">${q.source} ${q.eta ? '&middot; ETA: ' + q.eta : ''}</div>
+              <div class="queue-item-title">${esc(q.title)}</div>
+              <div class="queue-item-meta">${esc(q.source)} ${q.eta ? '&middot; ETA: ' + esc(q.eta) : ''}</div>
             </div>
             <div class="queue-item-progress">
               <div class="queue-item-percent">${q.progress}%</div>
@@ -331,15 +335,16 @@ const App = {
       return;
     }
 
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
     container.innerHTML = data.sessions.map(s => `
       <div class="stream-card">
         <div class="stream-indicator ${s.state === 'paused' ? 'paused' : ''}"></div>
         <div class="stream-info">
-          <div class="stream-title">${s.title}</div>
-          <div class="stream-meta">${s.source ? s.source + ' &middot; ' : ''}${s.quality} &middot; ${s.transcode} &middot; ${s.player}</div>
+          <div class="stream-title">${esc(s.title)}</div>
+          <div class="stream-meta">${s.source ? esc(s.source) + ' &middot; ' : ''}${esc(s.quality)} &middot; ${esc(s.transcode)} &middot; ${esc(s.player)}</div>
         </div>
         <div>
-          <div class="stream-user">${s.user}</div>
+          <div class="stream-user">${esc(s.user)}</div>
           <div class="progress-bar" style="width:80px;margin-top:4px">
             <div class="progress-fill" style="width:${s.progress}%"></div>
           </div>
@@ -554,9 +559,9 @@ const App = {
 
   errorCard(service, message, section) {
     return `<div class="not-configured error-card">
-      Failed to connect to <strong>${service}</strong><br>
-      <span style="font-size:12px;margin-top:4px;display:inline-block;color:var(--text-muted)">${message}</span>
-      ${section ? `<br><button class="retry-btn" data-section="${section}">Retry</button>` : ''}
+      Failed to connect to <strong>${this.escapeHtml(service)}</strong><br>
+      <span style="font-size:12px;margin-top:4px;display:inline-block;color:var(--text-muted)">${this.escapeHtml(message)}</span>
+      ${section ? `<br><button class="retry-btn" data-section="${this.escapeHtml(section)}">Retry</button>` : ''}
     </div>`;
   },
 };
