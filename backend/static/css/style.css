@@ -100,6 +100,12 @@ body {
   gap: 12px;
 }
 
+.last-updated {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -202,7 +208,7 @@ body {
 
 .section-icon.proxmox { background: var(--orange-dim); color: var(--orange); }
 .section-icon.docker { background: var(--blue-dim); color: var(--blue); }
-.section-icon.arr { background: var(--purple); background: var(--accent-dim); color: var(--accent); }
+.section-icon.arr { background: var(--accent-dim); color: var(--accent); }
 .section-icon.streaming { background: var(--green-dim); color: var(--green); }
 
 .section-title {
@@ -228,6 +234,32 @@ body {
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.not-configured.error-card {
+  border-color: var(--red-dim);
+  color: var(--red);
+}
+
+/* ---- Retry Button ---- */
+.retry-btn {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 6px 20px;
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.retry-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ---- Cards Grid ---- */
@@ -624,7 +656,15 @@ body {
 
 .chat-status {
   font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chat-status.online {
   color: var(--green);
+}
+
+.chat-status.offline {
+  color: var(--red);
 }
 
 .chat-close {
@@ -781,6 +821,8 @@ body {
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
   .header { padding: 12px 16px; }
+  .header-left { flex-wrap: wrap; }
+  .last-updated { width: 100%; order: 3; }
   .dashboard { padding: 16px; }
   .dashboard.chat-open { margin-right: 0; }
   .chat-panel { width: 100%; right: -100%; }

@@ -1,8 +1,10 @@
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from backend.config import settings
+from backend.integrations.arr import _get_client as _get_shared_client
 
 router = APIRouter()
 
@@ -23,15 +25,16 @@ async def openclaw_status():
         return {"configured": False}
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                f"{settings.OPENCLAW_URL}/api/models",
-                headers={"Authorization": f"Bearer {settings.OPENCLAW_API_KEY}"},
-            )
-            if resp.status_code == 200:
-                models = resp.json()
-                return {"configured": True, "status": "online", "models": models}
-            return {"configured": True, "status": "error"}
+        client = await _get_shared_client()
+        resp = await client.get(
+            f"{settings.OPENCLAW_URL}/api/models",
+            headers={"Authorization": f"Bearer {settings.OPENCLAW_API_KEY}"},
+            timeout=5.0,
+        )
+        if resp.status_code == 200:
+            models = resp.json()
+            return {"configured": True, "status": "online", "models": models}
+        return {"configured": True, "status": "error"}
     except httpx.ConnectError:
         return {"configured": True, "status": "offline"}
     except Exception:
@@ -51,25 +54,28 @@ async def openclaw_chat(request: ChatRequest):
             "stream": False,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                f"{settings.OPENCLAW_URL}/api/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENCLAW_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        client = await _get_shared_client()
+        resp = await client.post(
+            f"{settings.OPENCLAW_URL}/api/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.OPENCLAW_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-            assistant_message = data["choices"][0]["message"]["content"]
-            return {"response": assistant_message}
+        assistant_message = data["choices"][0]["message"]["content"]
+        return {"response": assistant_message}
 
     except httpx.ConnectError:
         raise HTTPException(status_code=503, detail="Cannot connect to OpenClaw")
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail="OpenClaw API error")
+        raise HTTPException(
+            status_code=e.response.status_code, detail="OpenClaw API error"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -80,8 +86,6 @@ async def openclaw_chat_stream(request: ChatRequest):
     if not settings.OPENCLAW_URL:
         raise HTTPException(status_code=503, detail="OpenClaw not configured")
 
-    from fastapi.responses import StreamingResponse
-
     async def stream_response():
         payload = {
             "model": settings.OPENCLAW_MODEL,
@@ -89,17 +93,18 @@ async def openclaw_chat_stream(request: ChatRequest):
             "stream": True,
         }
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                f"{settings.OPENCLAW_URL}/api/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENCLAW_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            ) as resp:
-                async for chunk in resp.aiter_text():
-                    yield chunk
+        client = await _get_shared_client()
+        async with client.stream(
+            "POST",
+            f"{settings.OPENCLAW_URL}/api/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.OPENCLAW_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=120.0,
+        ) as resp:
+            async for chunk in resp.aiter_text():
+                yield chunk
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")

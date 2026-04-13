@@ -1,3 +1,4 @@
+import asyncio
 import docker
 from fastapi import APIRouter, HTTPException
 
@@ -11,16 +12,32 @@ def _get_client():
         return None
 
 
-@router.get("/containers")
-async def get_containers():
-    """List all Docker containers with status and resource info."""
+def _get_container_stats(container) -> dict:
+    """Get stats for a single container. Blocking — runs via to_thread."""
+    try:
+        stats = container.stats(stream=False)
+        return {
+            "cpu_percent": _calc_cpu_percent(stats),
+            "mem_usage": stats["memory_stats"].get("usage", 0),
+            "mem_limit": stats["memory_stats"].get("limit", 0),
+        }
+    except Exception:
+        return {"cpu_percent": 0, "mem_usage": 0, "mem_limit": 0}
+
+
+async def fetch_docker_data() -> dict:
+    """Fetch all Docker container data. Returns a dict; never raises."""
     client = _get_client()
     if not client:
         return {"configured": False, "containers": []}
 
     try:
         containers = client.containers.list(all=True)
-        result = []
+
+        # Build base info for every container
+        container_info = []
+        stats_coros = []
+
         for c in containers:
             info = {
                 "id": c.short_id,
@@ -31,30 +48,37 @@ async def get_containers():
                 "created": c.attrs["Created"],
                 "ports": _format_ports(c.ports),
             }
+            container_info.append(info)
 
-            # Get resource stats for running containers
             if c.status == "running":
-                try:
-                    stats = c.stats(stream=False)
-                    info["cpu_percent"] = _calc_cpu_percent(stats)
-                    info["mem_usage"] = stats["memory_stats"].get("usage", 0)
-                    info["mem_limit"] = stats["memory_stats"].get("limit", 0)
-                except Exception:
-                    info["cpu_percent"] = 0
-                    info["mem_usage"] = 0
-                    info["mem_limit"] = 0
+                # Offload blocking stats() call to a thread
+                stats_coros.append(asyncio.to_thread(_get_container_stats, c))
             else:
-                info["cpu_percent"] = 0
-                info["mem_usage"] = 0
-                info["mem_limit"] = 0
+                async def _default():
+                    return {"cpu_percent": 0, "mem_usage": 0, "mem_limit": 0}
+                stats_coros.append(_default())
 
-            result.append(info)
+        # Gather all stats concurrently
+        all_stats = await asyncio.gather(*stats_coros, return_exceptions=True)
+        for info, stats in zip(container_info, all_stats):
+            if isinstance(stats, Exception):
+                stats = {"cpu_percent": 0, "mem_usage": 0, "mem_limit": 0}
+            info.update(stats)
 
-        return {"configured": True, "containers": result}
+        return {"configured": True, "containers": container_info}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"configured": True, "containers": [], "error": str(e)}
     finally:
         client.close()
+
+
+@router.get("/containers")
+async def get_containers():
+    """List all Docker containers with status and resource info."""
+    data = await fetch_docker_data()
+    if "error" in data:
+        raise HTTPException(status_code=500, detail=data["error"])
+    return data
 
 
 def _calc_cpu_percent(stats: dict) -> float:

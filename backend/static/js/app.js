@@ -7,15 +7,20 @@ const App = {
   chatMessages: [],
   refreshInterval: null,
   isLoading: false,
+  lastUpdated: null,
+  openclawOnline: false,
+  MAX_CHAT_HISTORY: 50,
+  _timestampTimer: null,
 
   init() {
     this.bindEvents();
-    this.loadAll();
+    this.loadDashboard();
     this.startAutoRefresh();
+    this.checkOpenClawStatus();
   },
 
   bindEvents() {
-    document.getElementById('refresh-btn').addEventListener('click', () => this.loadAll());
+    document.getElementById('refresh-btn').addEventListener('click', () => this.loadDashboard());
     document.getElementById('chat-toggle').addEventListener('click', () => this.toggleChat());
     document.getElementById('chat-close').addEventListener('click', () => this.toggleChat());
     document.getElementById('chat-send').addEventListener('click', () => this.sendMessage());
@@ -25,42 +30,124 @@ const App = {
         this.sendMessage();
       }
     });
+
+    // Retry button delegation
+    document.getElementById('dashboard').addEventListener('click', (e) => {
+      const btn = e.target.closest('.retry-btn');
+      if (btn) {
+        const section = btn.dataset.section;
+        if (section) this.retrySection(section);
+      }
+    });
   },
 
   startAutoRefresh() {
-    this.refreshInterval = setInterval(() => this.loadAll(), 30000);
+    this.refreshInterval = setInterval(() => this.loadDashboard(), 30000);
   },
 
-  async loadAll() {
+  // ── Main data loading ──────────────────────────────────────────
+
+  async loadDashboard() {
     if (this.isLoading) return;
     this.isLoading = true;
     const btn = document.getElementById('refresh-btn');
     btn.classList.add('loading');
 
-    await Promise.allSettled([
-      this.loadProxmox(),
-      this.loadDocker(),
-      this.loadArr(),
-      this.loadStreaming(),
-    ]);
+    try {
+      const data = await this.fetch('/api/dashboard');
+      this.renderProxmox(data.proxmox);
+      this.renderDocker(data.docker);
+      this.renderArr(data.radarr, data.sonarr, data.lidarr);
+      this.renderStreaming(data.streaming);
+      this.updateTimestamp(data.timestamp);
+    } catch (e) {
+      // Fallback: load sections individually
+      await Promise.allSettled([
+        this.loadProxmox(),
+        this.loadDocker(),
+        this.loadArr(),
+        this.loadStreaming(),
+      ]);
+      this.updateTimestamp(new Date().toISOString());
+    }
 
     btn.classList.remove('loading');
     this.isLoading = false;
   },
 
-  // ---- Proxmox ----
+  // ── Per-section retry ──────────────────────────────────────────
+
+  async retrySection(section) {
+    const loaders = {
+      proxmox: () => this.loadProxmox(),
+      docker: () => this.loadDocker(),
+      arr: () => this.loadArr(),
+      streaming: () => this.loadStreaming(),
+    };
+    if (loaders[section]) await loaders[section]();
+  },
+
   async loadProxmox() {
     const container = document.getElementById('proxmox-content');
     try {
       const data = await this.fetch('/api/proxmox/status');
-      if (!data.configured) {
-        container.innerHTML = this.notConfigured('Proxmox', 'Set PROXMOX_HOST and API token in .env');
-        return;
-      }
-      container.innerHTML = data.nodes.map(node => this.renderNode(node)).join('');
+      this.renderProxmox(data);
     } catch (e) {
-      container.innerHTML = this.errorCard('Proxmox', e.message);
+      container.innerHTML = this.errorCard('Proxmox', e.message, 'proxmox');
     }
+  },
+
+  async loadDocker() {
+    const container = document.getElementById('docker-content');
+    try {
+      const data = await this.fetch('/api/docker/containers');
+      this.renderDocker(data);
+    } catch (e) {
+      container.innerHTML = this.errorCard('Docker', e.message, 'docker');
+    }
+  },
+
+  async loadArr() {
+    const container = document.getElementById('arr-content');
+    try {
+      const [radarr, sonarr, lidarr] = await Promise.allSettled([
+        this.fetch('/api/arr/radarr'),
+        this.fetch('/api/arr/sonarr'),
+        this.fetch('/api/arr/lidarr'),
+      ]);
+      this.renderArr(
+        radarr.status === 'fulfilled' ? radarr.value : null,
+        sonarr.status === 'fulfilled' ? sonarr.value : null,
+        lidarr.status === 'fulfilled' ? lidarr.value : null,
+      );
+    } catch (e) {
+      container.innerHTML = this.errorCard('Arr Suite', e.message, 'arr');
+    }
+  },
+
+  async loadStreaming() {
+    const container = document.getElementById('streaming-content');
+    try {
+      const data = await this.fetch('/api/arr/streaming');
+      this.renderStreaming(data);
+    } catch (e) {
+      container.innerHTML = this.errorCard('Streaming', e.message, 'streaming');
+    }
+  },
+
+  // ── Render functions ───────────────────────────────────────────
+
+  renderProxmox(data) {
+    const container = document.getElementById('proxmox-content');
+    if (!data || data.error) {
+      container.innerHTML = this.errorCard('Proxmox', data?.error || 'Unknown error', 'proxmox');
+      return;
+    }
+    if (!data.configured) {
+      container.innerHTML = this.notConfigured('Proxmox', 'Set PROXMOX_HOST and API token in .env');
+      return;
+    }
+    container.innerHTML = data.nodes.map(node => this.renderNode(node)).join('');
   },
 
   renderNode(node) {
@@ -118,23 +205,22 @@ const App = {
       </div>`;
   },
 
-  // ---- Docker ----
-  async loadDocker() {
+  renderDocker(data) {
     const container = document.getElementById('docker-content');
     const badge = document.getElementById('docker-badge');
-    try {
-      const data = await this.fetch('/api/docker/containers');
-      if (!data.configured) {
-        container.innerHTML = this.notConfigured('Docker', 'Mount /var/run/docker.sock in docker-compose.yml');
-        badge.textContent = '0';
-        return;
-      }
-      const running = data.containers.filter(c => c.status === 'running').length;
-      badge.textContent = `${running}/${data.containers.length}`;
-      container.innerHTML = `<div class="card-grid">${data.containers.map(c => this.renderDockerCard(c)).join('')}</div>`;
-    } catch (e) {
-      container.innerHTML = this.errorCard('Docker', e.message);
+    if (!data || data.error) {
+      container.innerHTML = this.errorCard('Docker', data?.error || 'Unknown error', 'docker');
+      badge.textContent = '0';
+      return;
     }
+    if (!data.configured) {
+      container.innerHTML = this.notConfigured('Docker', 'Mount /var/run/docker.sock in docker-compose.yml');
+      badge.textContent = '0';
+      return;
+    }
+    const running = data.containers.filter(c => c.status === 'running').length;
+    badge.textContent = `${running}/${data.containers.length}`;
+    container.innerHTML = `<div class="card-grid">${data.containers.map(c => this.renderDockerCard(c)).join('')}</div>`;
   },
 
   renderDockerCard(c) {
@@ -159,114 +245,142 @@ const App = {
       </div>`;
   },
 
-  // ---- Arr Suite ----
-  async loadArr() {
+  renderArr(radarr, sonarr, lidarr) {
     const container = document.getElementById('arr-content');
-    try {
-      const [radarr, sonarr, lidarr] = await Promise.allSettled([
-        this.fetch('/api/arr/radarr'),
-        this.fetch('/api/arr/sonarr'),
-        this.fetch('/api/arr/lidarr'),
-      ]);
+    const r = radarr && !radarr.error ? radarr : null;
+    const s = sonarr && !sonarr.error ? sonarr : null;
+    const l = lidarr && !lidarr.error ? lidarr : null;
 
-      const r = radarr.status === 'fulfilled' ? radarr.value : null;
-      const s = sonarr.status === 'fulfilled' ? sonarr.value : null;
-      const l = lidarr.status === 'fulfilled' ? lidarr.value : null;
-
-      if (!r?.configured && !s?.configured && !l?.configured) {
+    if (!r?.configured && !s?.configured && !l?.configured) {
+      // Check if any had errors
+      const errors = [radarr, sonarr, lidarr].filter(d => d?.error);
+      if (errors.length) {
+        container.innerHTML = this.errorCard('Arr Suite', errors[0].error, 'arr');
+      } else {
         container.innerHTML = this.notConfigured('Arr Suite', 'Configure Radarr, Sonarr, or Lidarr API keys in .env');
-        return;
       }
-
-      let html = '<div class="arr-stats">';
-
-      if (r?.configured) {
-        html += `
-          <div class="arr-stat-card"><div class="arr-stat-number">${r.downloaded}</div><div class="arr-stat-label">Movies Downloaded</div></div>
-          <div class="arr-stat-card"><div class="arr-stat-number">${r.missing}</div><div class="arr-stat-label">Movies Missing</div></div>`;
-      }
-      if (s?.configured) {
-        html += `
-          <div class="arr-stat-card"><div class="arr-stat-number">${s.total_shows}</div><div class="arr-stat-label">TV Shows</div></div>
-          <div class="arr-stat-card"><div class="arr-stat-number">${s.total_episodes}</div><div class="arr-stat-label">Episodes Downloaded</div></div>
-          <div class="arr-stat-card"><div class="arr-stat-number">${s.missing_episodes}</div><div class="arr-stat-label">Episodes Missing</div></div>`;
-      }
-      if (l?.configured) {
-        html += `
-          <div class="arr-stat-card"><div class="arr-stat-number">${l.total_artists}</div><div class="arr-stat-label">Artists</div></div>
-          <div class="arr-stat-card"><div class="arr-stat-number">${l.total_albums}</div><div class="arr-stat-label">Albums</div></div>`;
-      }
-      html += '</div>';
-
-      // Download queues
-      const allQueue = [
-        ...(r?.queue || []).map(q => ({ ...q, source: 'Radarr' })),
-        ...(s?.queue || []).map(q => ({ ...q, source: 'Sonarr' })),
-        ...(l?.queue || []).map(q => ({ ...q, source: 'Lidarr' })),
-      ];
-
-      if (allQueue.length > 0) {
-        html += `<div class="queue-section">
-          <div class="queue-title">Download Queue (${allQueue.length})</div>
-          ${allQueue.map(q => `
-            <div class="queue-item">
-              <div class="queue-item-info">
-                <div class="queue-item-title">${q.title}</div>
-                <div class="queue-item-meta">${q.source} ${q.eta ? '&middot; ETA: ' + q.eta : ''}</div>
-              </div>
-              <div class="queue-item-progress">
-                <div class="queue-item-percent">${q.progress}%</div>
-                <div class="progress-bar"><div class="progress-fill" style="width:${q.progress}%"></div></div>
-              </div>
-            </div>`).join('')}
-        </div>`;
-      }
-
-      container.innerHTML = html;
-    } catch (e) {
-      container.innerHTML = this.errorCard('Arr Suite', e.message);
+      return;
     }
+
+    let html = '<div class="arr-stats">';
+
+    if (r?.configured) {
+      html += `
+        <div class="arr-stat-card"><div class="arr-stat-number">${r.downloaded}</div><div class="arr-stat-label">Movies Downloaded</div></div>
+        <div class="arr-stat-card"><div class="arr-stat-number">${r.requested}</div><div class="arr-stat-label">Movies Requested</div></div>
+        <div class="arr-stat-card"><div class="arr-stat-number">${r.total}</div><div class="arr-stat-label">Movies Total</div></div>`;
+    }
+    if (s?.configured) {
+      html += `
+        <div class="arr-stat-card"><div class="arr-stat-number">${s.total_shows}</div><div class="arr-stat-label">TV Shows (${s.monitored_shows} monitored)</div></div>
+        <div class="arr-stat-card"><div class="arr-stat-number">${s.total_episodes}</div><div class="arr-stat-label">Episodes Downloaded</div></div>
+        <div class="arr-stat-card"><div class="arr-stat-number">${s.missing_episodes}</div><div class="arr-stat-label">Episodes Missing</div></div>`;
+    }
+    if (l?.configured) {
+      html += `
+        <div class="arr-stat-card"><div class="arr-stat-number">${l.total_artists}</div><div class="arr-stat-label">Artists (${l.monitored_artists} monitored)</div></div>
+        <div class="arr-stat-card"><div class="arr-stat-number">${l.total_albums}</div><div class="arr-stat-label">Albums</div></div>`;
+    }
+    html += '</div>';
+
+    // Download queues
+    const allQueue = [
+      ...(r?.queue || []).map(q => ({ ...q, source: 'Radarr' })),
+      ...(s?.queue || []).map(q => ({ ...q, source: 'Sonarr' })),
+      ...(l?.queue || []).map(q => ({ ...q, source: 'Lidarr' })),
+    ];
+
+    if (allQueue.length > 0) {
+      html += `<div class="queue-section">
+        <div class="queue-title">Download Queue (${allQueue.length})</div>
+        ${allQueue.map(q => `
+          <div class="queue-item">
+            <div class="queue-item-info">
+              <div class="queue-item-title">${q.title}</div>
+              <div class="queue-item-meta">${q.source} ${q.eta ? '&middot; ETA: ' + q.eta : ''}</div>
+            </div>
+            <div class="queue-item-progress">
+              <div class="queue-item-percent">${q.progress}%</div>
+              <div class="progress-bar"><div class="progress-fill" style="width:${q.progress}%"></div></div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }
+
+    container.innerHTML = html;
   },
 
-  // ---- Streaming ----
-  async loadStreaming() {
+  renderStreaming(data) {
     const container = document.getElementById('streaming-content');
     const badge = document.getElementById('streaming-badge');
+    if (!data || data.error) {
+      container.innerHTML = this.errorCard('Streaming', data?.error || 'Unknown error', 'streaming');
+      badge.textContent = '0';
+      return;
+    }
+    if (!data.configured) {
+      container.innerHTML = this.notConfigured('Streaming', 'Configure Tautulli API key in .env');
+      badge.textContent = '0';
+      return;
+    }
+
+    badge.textContent = data.stream_count;
+
+    if (data.sessions.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#9654;</div>No active streams</div>';
+      return;
+    }
+
+    container.innerHTML = data.sessions.map(s => `
+      <div class="stream-card">
+        <div class="stream-indicator"></div>
+        <div class="stream-info">
+          <div class="stream-title">${s.title}</div>
+          <div class="stream-meta">${s.quality} &middot; ${s.transcode} &middot; ${s.player}</div>
+        </div>
+        <div>
+          <div class="stream-user">${s.user}</div>
+          <div class="progress-bar" style="width:80px;margin-top:4px">
+            <div class="progress-fill" style="width:${s.progress}%"></div>
+          </div>
+        </div>
+      </div>`).join('');
+  },
+
+  // ── Timestamp ──────────────────────────────────────────────────
+
+  updateTimestamp(isoString) {
+    this.lastUpdated = new Date(isoString);
+    this.renderTimestamp();
+    if (this._timestampTimer) clearInterval(this._timestampTimer);
+    this._timestampTimer = setInterval(() => this.renderTimestamp(), 5000);
+  },
+
+  renderTimestamp() {
+    const el = document.getElementById('last-updated');
+    if (!el || !this.lastUpdated) return;
+    const seconds = Math.floor((Date.now() - this.lastUpdated.getTime()) / 1000);
+    if (seconds < 5) el.textContent = 'Updated just now';
+    else if (seconds < 60) el.textContent = `Updated ${seconds}s ago`;
+    else el.textContent = `Updated ${Math.floor(seconds / 60)}m ago`;
+  },
+
+  // ── OpenClaw Chat ──────────────────────────────────────────────
+
+  async checkOpenClawStatus() {
+    const statusEl = document.getElementById('chat-status');
     try {
-      const data = await this.fetch('/api/arr/streaming');
-      if (!data.configured) {
-        container.innerHTML = this.notConfigured('Streaming', 'Configure Tautulli API key in .env');
-        badge.textContent = '0';
-        return;
-      }
-
-      badge.textContent = data.stream_count;
-
-      if (data.sessions.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#9654;</div>No active streams</div>';
-        return;
-      }
-
-      container.innerHTML = data.sessions.map(s => `
-        <div class="stream-card">
-          <div class="stream-indicator"></div>
-          <div class="stream-info">
-            <div class="stream-title">${s.title}</div>
-            <div class="stream-meta">${s.quality} &middot; ${s.transcode} &middot; ${s.player}</div>
-          </div>
-          <div>
-            <div class="stream-user">${s.user}</div>
-            <div class="progress-bar" style="width:80px;margin-top:4px">
-              <div class="progress-fill" style="width:${s.progress}%"></div>
-            </div>
-          </div>
-        </div>`).join('');
-    } catch (e) {
-      container.innerHTML = this.errorCard('Streaming', e.message);
+      const data = await this.fetch('/api/openclaw/status');
+      this.openclawOnline = data.status === 'online';
+      statusEl.textContent = this.openclawOnline ? 'Online' : 'Offline';
+      statusEl.className = 'chat-status ' + (this.openclawOnline ? 'online' : 'offline');
+    } catch {
+      this.openclawOnline = false;
+      statusEl.textContent = 'Offline';
+      statusEl.className = 'chat-status offline';
     }
   },
 
-  // ---- OpenClaw Chat ----
   toggleChat() {
     this.chatOpen = !this.chatOpen;
     const panel = document.getElementById('chat-panel');
@@ -274,13 +388,20 @@ const App = {
     panel.classList.toggle('open', this.chatOpen);
     dashboard.classList.toggle('chat-open', this.chatOpen);
 
-    if (this.chatOpen && this.chatMessages.length === 0) {
-      this.addChatMessage('assistant', 'Hello! I\'m OpenClaw, your homelab AI assistant. Ask me anything about your infrastructure, services, or let me help you troubleshoot issues.');
+    if (this.chatOpen) {
+      this.checkOpenClawStatus();
+      if (this.chatMessages.length === 0) {
+        this.addChatMessage('assistant', 'Hello! I\'m OpenClaw, your homelab AI assistant. Ask me anything about your infrastructure, services, or let me help you troubleshoot issues.');
+      }
     }
   },
 
   addChatMessage(role, content) {
     this.chatMessages.push({ role, content });
+    // Trim chat history to keep payload size manageable
+    if (this.chatMessages.length > this.MAX_CHAT_HISTORY) {
+      this.chatMessages = this.chatMessages.slice(-this.MAX_CHAT_HISTORY);
+    }
     this.renderChat();
   },
 
@@ -303,43 +424,90 @@ const App = {
     const sendBtn = document.getElementById('chat-send');
     sendBtn.disabled = true;
 
-    // Add typing indicator
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'chat-msg assistant typing';
-    typingDiv.textContent = 'Thinking';
-    document.getElementById('chat-messages').appendChild(typingDiv);
+    // Build message payload (trim to last N messages)
+    const payload = this.chatMessages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(-this.MAX_CHAT_HISTORY)
+      .map(m => ({ role: m.role, content: m.content }));
 
+    // Try streaming first, fall back to non-streaming
     try {
-      const resp = await this.fetchRaw('/api/openclaw/chat', {
+      const resp = await fetch('/api/openclaw/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: this.chatMessages.filter(m => m.role !== 'typing').map(m => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }),
+        body: JSON.stringify({ messages: payload }),
       });
-
-      typingDiv.remove();
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || 'OpenClaw request failed');
       }
 
-      const data = await resp.json();
-      this.addChatMessage('assistant', data.response);
+      // Stream the response token-by-token
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      // Insert empty assistant message for live updates
+      this.chatMessages.push({ role: 'assistant', content: '' });
+      const msgIdx = this.chatMessages.length - 1;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullText += delta;
+              this.chatMessages[msgIdx].content = fullText;
+              this.renderChat();
+            }
+          } catch { /* partial JSON, skip */ }
+        }
+      }
+
+      // If streaming produced nothing, show a fallback
+      if (!fullText) {
+        this.chatMessages[msgIdx].content = 'No response received.';
+        this.renderChat();
+      }
     } catch (e) {
-      typingDiv.remove();
-      this.addChatMessage('assistant', `Error: ${e.message}. Make sure OpenClaw is configured and running.`);
+      // Streaming failed — try non-streaming endpoint
+      try {
+        const resp = await this.fetchRaw('/api/openclaw/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: payload }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'OpenClaw request failed');
+        }
+        const data = await resp.json();
+        this.addChatMessage('assistant', data.response);
+      } catch (e2) {
+        this.addChatMessage('assistant', `Error: ${e2.message}. Make sure OpenClaw is configured and running.`);
+      }
     } finally {
       sendBtn.disabled = false;
       input.focus();
     }
   },
 
-  // ---- Helpers ----
+  // ── Helpers ────────────────────────────────────────────────────
+
   async fetch(url) {
     const resp = await fetch(url);
     if (!resp.ok) {
@@ -384,10 +552,11 @@ const App = {
     </div>`;
   },
 
-  errorCard(service, message) {
-    return `<div class="not-configured" style="border-color:var(--red-dim);color:var(--red)">
+  errorCard(service, message, section) {
+    return `<div class="not-configured error-card">
       Failed to connect to <strong>${service}</strong><br>
       <span style="font-size:12px;margin-top:4px;display:inline-block;color:var(--text-muted)">${message}</span>
+      ${section ? `<br><button class="retry-btn" data-section="${section}">Retry</button>` : ''}
     </div>`;
   },
 };
