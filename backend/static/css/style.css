@@ -865,7 +865,7 @@ body.density-compact .stream-card { padding: 12px 16px; }
   border: 2px solid var(--bg-secondary);
 }
 
-/* ---- Responsive ---- */
+/* ---- Responsive: Tablet & small desktop ---- */
 @media (max-width: 768px) {
   .header { padding: 12px 16px; }
   .header-left { flex-wrap: wrap; }
@@ -876,4 +876,127 @@ body.density-compact .stream-card { padding: 12px 16px; }
   .card-grid { grid-template-columns: 1fr; }
   .arr-stats { grid-template-columns: 1fr 1fr; }
   .node-resources { grid-template-columns: 1fr; }
+}
+
+/* ---- Responsive: Phone portrait ---- */
+@media (max-width: 480px) {
+  /* Safe area for notched phones */
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Header: compact, two-row layout */
+  .header {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .header-left {
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .header-logo {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+
+  .header h1 { font-size: 16px; }
+
+  .last-updated {
+    font-size: 11px;
+    order: 10;
+  }
+
+  .header-right {
+    gap: 8px;
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .status-dot { display: none; }
+
+  /* Buttons: icon-only on phone */
+  .refresh-btn {
+    padding: 8px 10px;
+    font-size: 0;     /* hide text */
+    gap: 0;
+  }
+  .refresh-btn svg { font-size: initial; }
+
+  .chat-toggle-btn {
+    padding: 8px 10px;
+    font-size: 0;
+    gap: 0;
+  }
+  .chat-toggle-btn svg { font-size: initial; }
+
+  .settings-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  /* Dashboard content */
+  .dashboard { padding: 12px; }
+  .main-container { min-height: calc(100vh - 88px); }
+  .dashboard { max-height: calc(100vh - 88px); }
+
+  .section { margin-bottom: 20px; }
+  .section-header { gap: 8px; margin-bottom: 10px; }
+  .section-icon { width: 28px; height: 28px; }
+  .section-title { font-size: 14px; }
+
+  /* Cards */
+  .card { padding: 14px; }
+  .card-grid { gap: 10px; }
+  .card-name { font-size: 13px; }
+  .card-stats { gap: 10px; }
+  .stat-value { font-size: 14px; }
+
+  /* Arr stats: single column on very narrow screens */
+  .arr-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .arr-stat-card { padding: 14px; }
+  .arr-stat-number { font-size: 24px; }
+  .arr-stat-label { font-size: 11px; }
+
+  /* Queue items */
+  .queue-item { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; }
+  .queue-item-progress { width: 100%; }
+  .queue-item-percent { text-align: left; }
+
+  /* Stream cards: stack vertically */
+  .stream-card { flex-wrap: wrap; gap: 8px; padding: 12px; }
+  .stream-info { min-width: 0; flex-basis: calc(100% - 26px); }
+  .stream-title { font-size: 13px; white-space: normal; }
+  .stream-meta { font-size: 11px; white-space: normal; }
+  .stream-user { text-align: left; font-size: 11px; }
+
+  /* Proxmox nodes */
+  .node-card { padding: 14px; }
+  .node-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .node-name { font-size: 14px; }
+  .node-stats { gap: 16px; }
+  .node-stat-value { font-size: 13px; }
+
+  /* Chat panel: full screen */
+  .chat-panel { top: 0; height: 100vh; }
+  .chat-msg { max-width: 90%; font-size: 13px; }
+  .chat-input { font-size: 14px; }
+
+  /* Touch-friendly targets (min 44px) */
+  .retry-btn { padding: 10px 24px; font-size: 13px; min-height: 44px; }
+  .section-badge { padding: 4px 10px; }
+
+  /* Progress bars: thicker on touch */
+  .progress-bar { height: 6px; }
+  .resource-bar { height: 8px; }
+
+  /* Loading skeleton */
+  .loading-skeleton { height: 80px; }
+  .empty-state { padding: 24px 16px; }
 }
