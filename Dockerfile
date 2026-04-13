@@ -13,9 +13,12 @@ COPY backend/ ./backend/
 COPY config/ ./config/
 COPY VERSION .
 
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
+
 # Run as non-root user (note: Docker socket access requires the user to be in
 # the docker group, or the socket GID must be passed via --group-add at runtime)
-RUN useradd -r -s /bin/false homepulse
+RUN useradd -r -s /bin/false homepulse && chown -R homepulse:homepulse /app/data
 USER homepulse
 
 EXPOSE 8000

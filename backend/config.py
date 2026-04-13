@@ -1,5 +1,6 @@
 import logging
 import os
+import sqlite3
 from pathlib import Path
 
 import yaml
@@ -8,6 +9,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger("homepulse.config")
+
+
+def _load_db_overrides() -> dict[str, str]:
+    """Load service config overrides from SQLite (if the DB exists)."""
+    for candidate in [Path("data/homepulse.db"), Path("/app/data/homepulse.db")]:
+        if candidate.is_file():
+            try:
+                conn = sqlite3.connect(str(candidate))
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT key, value FROM service_config").fetchall()
+                conn.close()
+                return {r["key"]: r["value"] for r in rows}
+            except Exception:
+                pass
+    return {}
 
 
 def _safe_int(value: str, default: int, name: str) -> tuple[int, str | None]:
@@ -25,46 +41,53 @@ class Settings:
     def __init__(self):
         self.warnings: list[str] = []
 
+        # Load DB overrides (web UI settings take precedence over .env)
+        db_overrides = _load_db_overrides()
+
+        def _get(key: str, default: str = "") -> str:
+            """DB override > env var > default."""
+            return db_overrides.get(key, os.getenv(key, default))
+
         # Proxmox
-        self.PROXMOX_HOST: str = os.getenv("PROXMOX_HOST", "").rstrip("/")
-        self.PROXMOX_USER: str = os.getenv("PROXMOX_USER", "root@pam")
-        self.PROXMOX_TOKEN_NAME: str = os.getenv("PROXMOX_TOKEN_NAME", "")
-        self.PROXMOX_TOKEN_VALUE: str = os.getenv("PROXMOX_TOKEN_VALUE", "")
+        self.PROXMOX_HOST: str = _get("PROXMOX_HOST").rstrip("/")
+        self.PROXMOX_USER: str = _get("PROXMOX_USER", "root@pam")
+        self.PROXMOX_TOKEN_NAME: str = _get("PROXMOX_TOKEN_NAME")
+        self.PROXMOX_TOKEN_VALUE: str = _get("PROXMOX_TOKEN_VALUE")
         self.PROXMOX_VERIFY_SSL: bool = (
-            os.getenv("PROXMOX_VERIFY_SSL", "false").lower() == "true"
+            _get("PROXMOX_VERIFY_SSL", "false").lower() == "true"
         )
 
         # Radarr
-        self.RADARR_URL: str = os.getenv("RADARR_URL", "").rstrip("/")
-        self.RADARR_API_KEY: str = os.getenv("RADARR_API_KEY", "")
+        self.RADARR_URL: str = _get("RADARR_URL").rstrip("/")
+        self.RADARR_API_KEY: str = _get("RADARR_API_KEY")
 
         # Sonarr
-        self.SONARR_URL: str = os.getenv("SONARR_URL", "").rstrip("/")
-        self.SONARR_API_KEY: str = os.getenv("SONARR_API_KEY", "")
+        self.SONARR_URL: str = _get("SONARR_URL").rstrip("/")
+        self.SONARR_API_KEY: str = _get("SONARR_API_KEY")
 
         # Lidarr
-        self.LIDARR_URL: str = os.getenv("LIDARR_URL", "").rstrip("/")
-        self.LIDARR_API_KEY: str = os.getenv("LIDARR_API_KEY", "")
+        self.LIDARR_URL: str = _get("LIDARR_URL").rstrip("/")
+        self.LIDARR_API_KEY: str = _get("LIDARR_API_KEY")
 
         # Jellyfin (direct streaming sessions)
-        self.JELLYFIN_URL: str = os.getenv("JELLYFIN_URL", "").rstrip("/")
-        self.JELLYFIN_API_KEY: str = os.getenv("JELLYFIN_API_KEY", "")
+        self.JELLYFIN_URL: str = _get("JELLYFIN_URL").rstrip("/")
+        self.JELLYFIN_API_KEY: str = _get("JELLYFIN_API_KEY")
 
         # Plex (direct streaming sessions)
-        self.PLEX_URL: str = os.getenv("PLEX_URL", "").rstrip("/")
-        self.PLEX_TOKEN: str = os.getenv("PLEX_TOKEN", "")
+        self.PLEX_URL: str = _get("PLEX_URL").rstrip("/")
+        self.PLEX_TOKEN: str = _get("PLEX_TOKEN")
 
         # Tautulli (Plex monitoring wrapper — alternative to direct Plex)
-        self.TAUTULLI_URL: str = os.getenv("TAUTULLI_URL", "").rstrip("/")
-        self.TAUTULLI_API_KEY: str = os.getenv("TAUTULLI_API_KEY", "")
+        self.TAUTULLI_URL: str = _get("TAUTULLI_URL").rstrip("/")
+        self.TAUTULLI_API_KEY: str = _get("TAUTULLI_API_KEY")
 
         # OpenClaw
-        self.OPENCLAW_URL: str = os.getenv("OPENCLAW_URL", "").rstrip("/")
-        self.OPENCLAW_API_KEY: str = os.getenv("OPENCLAW_API_KEY", "")
-        self.OPENCLAW_MODEL: str = os.getenv("OPENCLAW_MODEL", "default")
+        self.OPENCLAW_URL: str = _get("OPENCLAW_URL").rstrip("/")
+        self.OPENCLAW_API_KEY: str = _get("OPENCLAW_API_KEY")
+        self.OPENCLAW_MODEL: str = _get("OPENCLAW_MODEL", "default")
 
         # Dashboard
-        raw_interval = os.getenv("REFRESH_INTERVAL", "30")
+        raw_interval = _get("REFRESH_INTERVAL", "30")
         self.REFRESH_INTERVAL, warn = _safe_int(raw_interval, 30, "REFRESH_INTERVAL")
         if warn:
             self.warnings.append(warn)
