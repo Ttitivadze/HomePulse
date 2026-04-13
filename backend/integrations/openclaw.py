@@ -83,7 +83,8 @@ async def openclaw_chat(request: ChatRequest):
             status_code=e.response.status_code, detail="OpenClaw API error"
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("OpenClaw chat failed")
+        raise HTTPException(status_code=500, detail="OpenClaw request failed")
 
 
 @router.post("/chat/stream")

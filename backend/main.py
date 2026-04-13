@@ -108,7 +108,7 @@ async def dashboard():
     def safe(result):
         if isinstance(result, Exception):
             logger.error("Dashboard section failed: %s", result)
-            return {"configured": False, "error": str(result)}
+            return {"configured": False, "error": "Service unavailable"}
         return result
 
     proxmox, docker, radarr, sonarr, lidarr, streaming = results

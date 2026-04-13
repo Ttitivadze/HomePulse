@@ -96,4 +96,4 @@ async def test_dashboard_handles_exception_gracefully(async_client):
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["proxmox"]["error"] == "connection refused"
+    assert data["proxmox"]["error"] == "Service unavailable"

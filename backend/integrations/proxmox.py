@@ -116,7 +116,7 @@ async def fetch_proxmox_data() -> dict:
         return {"configured": True, "nodes": [], "error": "Proxmox API error"}
     except Exception as e:
         logger.exception("Proxmox fetch failed")
-        return {"configured": True, "nodes": [], "error": str(e)}
+        return {"configured": True, "nodes": [], "error": "Proxmox request failed"}
 
 
 @router.get("/status")

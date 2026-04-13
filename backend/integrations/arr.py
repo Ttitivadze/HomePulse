@@ -108,7 +108,7 @@ async def fetch_radarr_data() -> dict:
         return {"configured": True, "error": "Cannot connect to Radarr"}
     except Exception as e:
         logger.exception("Radarr fetch failed")
-        return {"configured": True, "error": str(e)}
+        return {"configured": True, "error": "Radarr request failed"}
 
 
 @router.get("/radarr")
@@ -160,7 +160,7 @@ async def fetch_sonarr_data() -> dict:
         return {"configured": True, "error": "Cannot connect to Sonarr"}
     except Exception as e:
         logger.exception("Sonarr fetch failed")
-        return {"configured": True, "error": str(e)}
+        return {"configured": True, "error": "Sonarr request failed"}
 
 
 @router.get("/sonarr")
@@ -207,7 +207,7 @@ async def fetch_lidarr_data() -> dict:
         return {"configured": True, "error": "Cannot connect to Lidarr"}
     except Exception as e:
         logger.exception("Lidarr fetch failed")
-        return {"configured": True, "error": str(e)}
+        return {"configured": True, "error": "Lidarr request failed"}
 
 
 @router.get("/lidarr")
@@ -381,7 +381,7 @@ async def fetch_streaming_data() -> dict:
         results = await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e:
         logger.exception("Streaming fetch failed")
-        return {"configured": True, "error": str(e)}
+        return {"configured": True, "error": "Streaming request failed"}
 
     sessions = []
     errors = []

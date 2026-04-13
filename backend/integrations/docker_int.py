@@ -76,7 +76,7 @@ async def fetch_docker_data() -> dict:
         return {"configured": True, "containers": container_info}
     except Exception as e:
         logger.exception("Docker fetch failed")
-        return {"configured": True, "containers": [], "error": str(e)}
+        return {"configured": True, "containers": [], "error": "Docker request failed"}
     finally:
         client.close()
 
