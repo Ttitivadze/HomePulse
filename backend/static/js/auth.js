@@ -43,12 +43,21 @@ const Auth = {
 
   async apiFetch(url, opts = {}) {
     const headers = { ...this.headers(), ...(opts.headers || {}) };
-    const resp = await fetch(url, { ...opts, headers });
-    if (resp.status === 401) {
-      this.clear();
-      throw new Error('Session expired');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const resp = await fetch(url, { ...opts, headers, signal: controller.signal });
+      if (resp.status === 401) {
+        this.clear();
+        throw new Error('Session expired');
+      }
+      return resp;
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('Request timed out');
+      throw e;
+    } finally {
+      clearTimeout(timeout);
     }
-    return resp;
   },
 
   async apiJson(url, opts = {}) {

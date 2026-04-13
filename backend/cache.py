@@ -10,8 +10,10 @@ DEFAULT_TTL = 15.0  # seconds
 def get(key: str, ttl: float = DEFAULT_TTL) -> Any | None:
     """Return cached value if it exists and hasn't expired, else None."""
     entry = _store.get(key)
-    if entry is not None and time.time() - entry[0] < ttl:
-        return entry[1]
+    if entry is not None:
+        if time.time() - entry[0] < ttl:
+            return entry[1]
+        del _store[key]  # Clean up expired entry
     return None
 
 

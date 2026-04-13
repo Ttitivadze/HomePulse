@@ -30,10 +30,13 @@ def async_client():
 async def init_db(tmp_path):
     """Initialize a fresh test database."""
     import backend.database as db_mod
+    # Close any existing connection before switching DB path
+    await db_mod.close_db()
     db_mod._DB_PATH = tmp_path / "test.db"
     await db.init_db()
     yield
-    # Clean up
+    # Clean up: close connection and reset path
+    await db_mod.close_db()
     db_mod._DB_PATH = None
 
 

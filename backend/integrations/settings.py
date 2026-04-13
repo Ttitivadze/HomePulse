@@ -4,6 +4,7 @@ import json
 import logging
 import re
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -212,8 +213,6 @@ async def test_service_connection(
     admin: dict = Depends(require_admin),
 ):
     """Test connectivity to a specific service. Admin only."""
-    import httpx
-
     # Fetch the current effective config
     row = await db.fetch_one("SELECT value FROM service_config WHERE key = ?", (f"{service}_URL",))
     if not row and service != "PROXMOX":

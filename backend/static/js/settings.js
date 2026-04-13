@@ -295,6 +295,7 @@ const Settings = {
 
   async loadServices() {
     const container = document.getElementById('services-form');
+    container.innerHTML = '<div class="loading-skeleton" style="height:200px"></div>';
     try {
       const data = await Auth.apiJson('/api/settings/services');
       const groups = {
@@ -355,6 +356,7 @@ const Settings = {
 
   async loadUsers() {
     const container = document.getElementById('users-list');
+    container.innerHTML = '<div class="loading-skeleton" style="height:120px"></div>';
     try {
       const users = await Auth.apiJson('/api/settings/users');
       if (users.length === 0) {
@@ -432,18 +434,11 @@ const Settings = {
   // ── Helpers ─────────────────────────────────────────────────
 
   _escHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = String(text ?? '');
-    return div.innerHTML;
+    return Utils.escapeHtml(text);
   },
 
   _escAttr(text) {
-    return String(text ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    return Utils.escapeAttr(text);
   },
 
   showToast(message, isError = false) {

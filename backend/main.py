@@ -64,11 +64,15 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown: close the shared httpx client used by arr + openclaw
-    from backend.integrations import arr
+    # Shutdown: close shared httpx clients and database
+    from backend.integrations import arr, proxmox
+    from backend import database as db_mod
 
     if arr._client is not None and not arr._client.is_closed:
         await arr._client.aclose()
+    if proxmox._client is not None and not proxmox._client.is_closed:
+        await proxmox._client.aclose()
+    await db_mod.close_db()
     logger.info("HomePulse stopped")
 
 

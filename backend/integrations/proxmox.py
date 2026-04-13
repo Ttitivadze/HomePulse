@@ -11,19 +11,25 @@ logger = logging.getLogger("homepulse.proxmox")
 
 router = APIRouter()
 
+# Module-level shared client; created lazily, closed during app shutdown.
+_client: httpx.AsyncClient | None = None
 
-def _get_client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        base_url=settings.PROXMOX_HOST,
-        headers={
-            "Authorization": (
-                f"PVEAPIToken={settings.PROXMOX_USER}"
-                f"!{settings.PROXMOX_TOKEN_NAME}={settings.PROXMOX_TOKEN_VALUE}"
-            )
-        },
-        verify=settings.PROXMOX_VERIFY_SSL,
-        timeout=10.0,
-    )
+
+async def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(
+            base_url=settings.PROXMOX_HOST,
+            headers={
+                "Authorization": (
+                    f"PVEAPIToken={settings.PROXMOX_USER}"
+                    f"!{settings.PROXMOX_TOKEN_NAME}={settings.PROXMOX_TOKEN_VALUE}"
+                )
+            },
+            verify=settings.PROXMOX_VERIFY_SSL,
+            timeout=10.0,
+        )
+    return _client
 
 
 async def _fetch_node_guests(
@@ -79,34 +85,34 @@ async def fetch_proxmox_data() -> dict:
         return cached
 
     try:
-        async with _get_client() as client:
-            nodes_resp = await client.get("/api2/json/nodes")
-            nodes_resp.raise_for_status()
-            nodes = nodes_resp.json()["data"]
+        client = await _get_client()
+        nodes_resp = await client.get("/api2/json/nodes")
+        nodes_resp.raise_for_status()
+        nodes = nodes_resp.json()["data"]
 
-            async def build_node(node):
-                node_name = node["node"]
-                vms, containers = await _fetch_node_guests(client, node_name)
-                return {
-                    "name": node_name,
-                    "status": node.get("status", "unknown"),
-                    "cpu": round(node.get("cpu", 0) * 100, 1),
-                    "mem_used": node.get("mem", 0),
-                    "mem_total": node.get("maxmem", 0),
-                    "uptime": node.get("uptime", 0),
-                    "vms": vms,
-                    "containers": containers,
-                }
+        async def build_node(node):
+            node_name = node["node"]
+            vms, containers = await _fetch_node_guests(client, node_name)
+            return {
+                "name": node_name,
+                "status": node.get("status", "unknown"),
+                "cpu": round(node.get("cpu", 0) * 100, 1),
+                "mem_used": node.get("mem", 0),
+                "mem_total": node.get("maxmem", 0),
+                "uptime": node.get("uptime", 0),
+                "vms": vms,
+                "containers": containers,
+            }
 
-            results = await asyncio.gather(
-                *(build_node(n) for n in nodes),
-                return_exceptions=True,
-            )
-            valid_nodes = [r for r in results if isinstance(r, dict)]
+        results = await asyncio.gather(
+            *(build_node(n) for n in nodes),
+            return_exceptions=True,
+        )
+        valid_nodes = [r for r in results if isinstance(r, dict)]
 
-            data = {"configured": True, "nodes": valid_nodes}
-            cache.put("proxmox", data)
-            return data
+        data = {"configured": True, "nodes": valid_nodes}
+        cache.put("proxmox", data)
+        return data
 
     except httpx.ConnectError:
         logger.warning("Cannot connect to Proxmox at %s", settings.PROXMOX_HOST)

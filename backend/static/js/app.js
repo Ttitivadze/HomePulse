@@ -410,11 +410,17 @@ const App = {
     this.renderChat();
   },
 
-  renderChat() {
+  renderChat(updateLastOnly) {
     const container = document.getElementById('chat-messages');
-    container.innerHTML = this.chatMessages.map(m =>
-      `<div class="chat-msg ${m.role}">${this.escapeHtml(m.content)}</div>`
-    ).join('');
+    if (updateLastOnly && container.lastElementChild) {
+      // Fast path: update only the last message's text (used during streaming)
+      container.lastElementChild.textContent = this.chatMessages[this.chatMessages.length - 1].content;
+    } else {
+      // Full rebuild: when messages are added or removed
+      container.innerHTML = this.chatMessages.map(m =>
+        `<div class="chat-msg ${m.role}">${this.escapeHtml(m.content)}</div>`
+      ).join('');
+    }
     container.scrollTop = container.scrollHeight;
   },
 
@@ -477,7 +483,7 @@ const App = {
             if (delta) {
               fullText += delta;
               this.chatMessages[msgIdx].content = fullText;
-              this.renderChat();
+              this.renderChat(true);
             }
           } catch { /* partial JSON, skip */ }
         }
@@ -545,9 +551,7 @@ const App = {
   },
 
   escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return Utils.escapeHtml(text);
   },
 
   notConfigured(service, hint) {
