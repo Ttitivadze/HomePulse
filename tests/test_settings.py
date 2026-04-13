@@ -181,3 +181,55 @@ async def test_update_service_config(admin_token, async_client):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "updated"
+
+
+# ── Validation ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_reject_invalid_color(admin_token, async_client):
+    """Color fields must be valid CSS colors."""
+    resp = await async_client.put("/api/settings/ui",
+        json={"accent_color": "not-a-color"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_accept_valid_hex_color(admin_token, async_client):
+    resp = await async_client.put("/api/settings/ui",
+        json={"accent_color": "#ff5733"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["accent_color"] == "#ff5733"
+
+
+@pytest.mark.asyncio
+async def test_reject_invalid_section_order(admin_token, async_client):
+    """Section order must only contain known sections."""
+    resp = await async_client.put("/api/settings/ui",
+        json={"section_order": ["proxmox", "hacked", "docker"]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_accept_valid_section_order(admin_token, async_client):
+    resp = await async_client.put("/api/settings/ui",
+        json={"section_order": ["docker", "proxmox", "streaming", "arr"]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["section_order"] == ["docker", "proxmox", "streaming", "arr"]
+
+
+@pytest.mark.asyncio
+async def test_reject_unknown_service_key(admin_token, async_client):
+    """Unknown service config keys should be rejected."""
+    resp = await async_client.put("/api/settings/services",
+        json={"configs": {"UNKNOWN_KEY": "value"}},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 400

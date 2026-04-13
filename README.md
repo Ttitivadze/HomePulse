@@ -6,6 +6,15 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v1.1.1
+- **Security**: Fix CORS to allow PUT/DELETE methods (admin settings were blocked)
+- **Security**: Fix XSS — add attribute-safe escaping for quotes in settings panel
+- **Security**: Add CSS color validation and section order validation on backend
+- **Security**: Timing-safe login to prevent user enumeration
+- **Security**: Fix TOCTOU race condition in first-run setup endpoint
+- **Hardening**: Add SQLite connection timeout, log DB override failures
+- **Tests**: 5 new validation tests (invalid colors, section order, unknown config keys)
+
 ### v1.1.0
 - **Account system** with admin privileges and JWT authentication
 - **Settings panel** — admin-only gear icon with three tabs:
@@ -187,6 +196,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `1.1.1` — Security hardening, input validation, XSS fixes
 - `1.1.0` — Account system, admin settings panel, UI customization
 - `1.0.0` — First stable public release
 

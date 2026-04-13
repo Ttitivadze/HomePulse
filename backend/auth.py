@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -90,7 +90,7 @@ class SetupRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str = Field(..., max_length=50)
-    password: str = Field(..., max_length=128)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -122,13 +122,21 @@ async def setup(req: SetupRequest):
         raise HTTPException(status_code=400, detail="Setup already completed")
 
     pw_hash = hash_password(req.password)
-    user_id = await db.execute_returning_id(
-        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
-        (req.username, pw_hash),
-    )
+    try:
+        user_id = await db.execute_returning_id(
+            "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
+            (req.username, pw_hash),
+        )
+    except Exception:
+        # Race condition: another request created a user between check and insert
+        raise HTTPException(status_code=400, detail="Setup already completed")
     token = create_token(user_id, req.username, True)
     logger.info("Initial admin account created: %s", req.username)
     return TokenResponse(token=token, username=req.username, is_admin=True)
+
+
+# Dummy hash used for timing-safe login (prevent user enumeration via timing)
+_DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -138,7 +146,11 @@ async def login(req: LoginRequest):
         "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
         (req.username,),
     )
-    if not user or not verify_password(req.password, user["password_hash"]):
+    if not user:
+        # Timing-safe: always run bcrypt even for non-existent users
+        verify_password(req.password, _DUMMY_HASH)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_token(user["id"], user["username"], bool(user["is_admin"]))

@@ -229,8 +229,8 @@ const Settings = {
     const container = document.getElementById('section-order-list');
     const labels = { proxmox: 'Proxmox VE', docker: 'Docker Containers', arr: 'Media Library', streaming: 'Active Streams' };
     container.innerHTML = order.map((key, i) => `
-      <div class="section-order-item" data-key="${key}">
-        <span>${labels[key] || key}</span>
+      <div class="section-order-item" data-key="${this._escAttr(key)}">
+        <span>${labels[key] || this._escHtml(key)}</span>
         <div class="section-order-btns">
           <button class="section-order-btn" onclick="Settings.moveSectionOrder(${i}, -1)" ${i === 0 ? 'disabled' : ''}>&#9650;</button>
           <button class="section-order-btn" onclick="Settings.moveSectionOrder(${i}, 1)" ${i === order.length - 1 ? 'disabled' : ''}>&#9660;</button>
@@ -321,7 +321,7 @@ const Settings = {
           html += `
             <div class="settings-form-group">
               <label>${label} ${overrideTag}</label>
-              <input type="${type}" class="settings-input service-input" data-key="${key}" value="${this._escHtml(val)}" placeholder="From .env">
+              <input type="${type}" class="settings-input service-input" data-key="${key}" value="${this._escAttr(val)}" placeholder="From .env">
             </div>`;
         }
         html += '</div>';
@@ -371,7 +371,7 @@ const Settings = {
           <td class="user-actions">
             ${!isSelf ? `
               <button class="user-action-btn" onclick="Settings.toggleAdmin(${u.id})" title="${u.is_admin ? 'Remove admin' : 'Make admin'}">${u.is_admin ? 'Demote' : 'Promote'}</button>
-              <button class="user-action-btn danger" onclick="Settings.deleteUser(${u.id}, '${this._escHtml(u.username)}')" title="Delete user">Delete</button>
+              <button class="user-action-btn danger" onclick="Settings.deleteUser(${u.id}, '${this._escAttr(u.username)}')" title="Delete user">Delete</button>
             ` : '<span class="text-muted">You</span>'}
           </td>
         </tr>`;
@@ -435,6 +435,15 @@ const Settings = {
     const div = document.createElement('div');
     div.textContent = String(text ?? '');
     return div.innerHTML;
+  },
+
+  _escAttr(text) {
+    return String(text ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   },
 
   showToast(message, isError = false) {

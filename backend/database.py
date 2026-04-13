@@ -27,7 +27,7 @@ def _get_connection() -> sqlite3.Connection:
     global _DB_PATH
     if _DB_PATH is None:
         _DB_PATH = _resolve_db_path()
-    conn = sqlite3.connect(str(_DB_PATH))
+    conn = sqlite3.connect(str(_DB_PATH), timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

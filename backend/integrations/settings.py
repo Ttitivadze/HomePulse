@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -13,6 +14,9 @@ from backend.auth import (
     require_admin,
     create_token,
 )
+
+# Regex for validating CSS color values (#hex, rgb(), hsl())
+_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{3,8}$|^rgba?\([\d\s,.%]+\)$|^hsla?\([\d\s,.%]+\)$')
 
 logger = logging.getLogger("homepulse.settings")
 
@@ -30,6 +34,12 @@ VALID_FONTS = [
 ]
 
 VALID_DENSITIES = ["compact", "comfortable"]
+VALID_SECTIONS = ["proxmox", "docker", "arr", "streaming"]
+
+
+def _validate_color(value: str, field_name: str) -> None:
+    if not _COLOR_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"Invalid color for {field_name}: must be a hex (#rrggbb) or rgb/hsl value")
 
 
 class UISettingsUpdate(BaseModel):
@@ -68,16 +78,17 @@ async def update_ui_settings(
 ):
     """Update global UI settings. Admin only."""
     updates = {}
-    if req.accent_color is not None:
-        updates["accent_color"] = req.accent_color
-    if req.bg_primary is not None:
-        updates["bg_primary"] = req.bg_primary
-    if req.bg_secondary is not None:
-        updates["bg_secondary"] = req.bg_secondary
-    if req.bg_card is not None:
-        updates["bg_card"] = req.bg_card
-    if req.text_primary is not None:
-        updates["text_primary"] = req.text_primary
+    color_fields = {
+        "accent_color": req.accent_color,
+        "bg_primary": req.bg_primary,
+        "bg_secondary": req.bg_secondary,
+        "bg_card": req.bg_card,
+        "text_primary": req.text_primary,
+    }
+    for field, value in color_fields.items():
+        if value is not None:
+            _validate_color(value, field)
+            updates[field] = value
     if req.font_family is not None:
         if req.font_family not in VALID_FONTS:
             raise HTTPException(status_code=400, detail=f"Invalid font. Choose from: {VALID_FONTS}")
@@ -87,6 +98,9 @@ async def update_ui_settings(
             raise HTTPException(status_code=400, detail=f"Invalid density. Choose from: {VALID_DENSITIES}")
         updates["card_density"] = req.card_density
     if req.section_order is not None:
+        invalid = [s for s in req.section_order if s not in VALID_SECTIONS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid sections: {invalid}. Choose from: {VALID_SECTIONS}")
         updates["section_order"] = json.dumps(req.section_order)
 
     if not updates:

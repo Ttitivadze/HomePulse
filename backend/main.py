@@ -27,7 +27,7 @@ from backend.config import settings
 logger = logging.getLogger("homepulse")
 
 _version_file = Path(__file__).parent.parent / "VERSION"
-__version__ = _version_file.read_text().strip() if _version_file.is_file() else "1.1.0"
+__version__ = _version_file.read_text().strip() if _version_file.is_file() else "1.1.1"
 
 
 @asynccontextmanager
@@ -90,7 +90,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 

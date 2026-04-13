@@ -21,8 +21,8 @@ def _load_db_overrides() -> dict[str, str]:
                 rows = conn.execute("SELECT key, value FROM service_config").fetchall()
                 conn.close()
                 return {r["key"]: r["value"] for r in rows}
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to load DB overrides from %s: %s", candidate, e)
     return {}
 
 
