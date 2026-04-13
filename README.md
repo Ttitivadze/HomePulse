@@ -18,8 +18,8 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 ## Quick Start
 
 ```bash
-git clone https://github.com/Ttitivadze/ClaudeCode.git homepulse
-cd homepulse
+git clone https://github.com/Ttitivadze/HomePulse.git
+cd HomePulse
 cp .env.example .env     # Edit with your service URLs and API keys
 docker compose up -d     # Dashboard at http://your-server:8450
 ```
@@ -79,7 +79,7 @@ docker_labels:
 ### Getting API Keys
 
 | Service | Where to find it |
-|---------|-----------------|
+|---------|------------------|
 | Proxmox | Datacenter > Permissions > API Tokens > Add |
 | Radarr/Sonarr/Lidarr | Settings > General > API Key |
 | Jellyfin | Dashboard > API Keys > Add |

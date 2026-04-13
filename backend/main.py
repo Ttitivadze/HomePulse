@@ -19,8 +19,12 @@ from backend.integrations.arr import (
     fetch_streaming_data,
 )
 from backend.integrations.openclaw import router as openclaw_router
+from backend.config import settings
 
 logger = logging.getLogger("homepulse")
+
+_version_file = Path(__file__).parent.parent / "VERSION"
+__version__ = _version_file.read_text().strip() if _version_file.is_file() else "0.9.0"
 
 
 @asynccontextmanager
@@ -44,7 +48,7 @@ async def lifespan(app: FastAPI):
         configured.append("OpenClaw")
 
     logger.info(
-        "HomePulse v0.9.0 starting — configured services: %s",
+        f"HomePulse v{__version__} starting — configured services: %s",
         ", ".join(configured) if configured else "(none)",
     )
     if settings.warnings:
@@ -61,7 +65,7 @@ async def lifespan(app: FastAPI):
     logger.info("HomePulse stopped")
 
 
-app = FastAPI(title="HomePulse", version="0.9.0", lifespan=lifespan)
+app = FastAPI(title="HomePulse", version=__version__, lifespan=lifespan)
 
 # CORS — allow any origin so the dashboard works from any device on the LAN
 app.add_middleware(
