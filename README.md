@@ -4,6 +4,24 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green) ![License: MIT](https://img.shields.io/badge/license-MIT-purple)
 
+## Changelog
+
+### v1.1.0
+- **Account system** with admin privileges and JWT authentication
+- **Settings panel** — admin-only gear icon with three tabs:
+  - **Appearance**: accent/background/card/text colors, font selector, card density (compact/comfortable), drag section ordering
+  - **Services**: manage all API URLs and keys from the web UI (overrides .env), with masked secrets
+  - **Accounts**: create/delete users, promote/demote admins, password resets
+- **First-run setup wizard** — creates initial admin on first visit
+- **Global UI theming** — CSS custom properties driven from SQLite, applied on every page load
+- **SQLite database** — persistent storage for accounts, UI prefs, and service config overrides
+- Dashboard remains **public** — no login required to view; only settings requires admin auth
+
+### v1.0.0
+- First stable public release
+- Proxmox VE, Docker, Radarr/Sonarr/Lidarr, Jellyfin/Plex/Tautulli, OpenClaw chat
+- Single-request dashboard refresh, per-section retry, security headers, 24 tests
+
 ## Features
 
 - **Proxmox VE** — Nodes, VMs, and LXC containers with live CPU/RAM bars and uptime
@@ -13,6 +31,7 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 - **OpenClaw Chat** — Slide-out AI chat panel with streaming token display, connected to your self-hosted OpenClaw instance
 - **Single-request refresh** — One API call fetches everything in parallel; 30-second auto-refresh cycle
 - **Per-section retry** — If one service is down, retry just that section without reloading
+- **Admin Settings** — Account system with UI customization (colors, fonts, layout) and web-based service config management
 - **Mobile-ready** — Responsive grid, dark theme, iOS home screen support
 
 ## Quick Start
@@ -108,19 +127,26 @@ pytest tests/ -v
 ```
 backend/
   main.py                # FastAPI app, CORS, /api/dashboard
-  config.py              # Settings from env + YAML
+  config.py              # Settings from env + YAML + DB overrides
   cache.py               # 15-second TTL cache
+  database.py            # SQLite setup and async helpers
+  auth.py                # JWT auth, login/setup endpoints
   integrations/
     proxmox.py           # Proxmox VE (parallel node fetches)
     docker_int.py        # Docker socket (parallel stats)
     arr.py               # Radarr/Sonarr/Lidarr + Jellyfin/Plex/Tautulli
     openclaw.py          # Chat proxy (streaming + non-streaming)
+    settings.py          # Admin settings (UI, services, users)
   static/
     index.html           # SPA shell
-    js/app.js            # Frontend logic
-    css/style.css        # Dark theme
+    js/app.js            # Dashboard logic
+    js/auth.js           # Authentication (JWT token management)
+    js/settings.js       # Settings panel logic
+    css/style.css        # Dark theme with CSS custom properties
+    css/settings.css     # Settings panel styles
 config/config.yml        # Display settings
-tests/                   # 24 pytest tests
+data/                    # SQLite database (created at runtime)
+tests/                   # pytest test suite
 ```
 
 ## API
@@ -138,6 +164,16 @@ tests/                   # 24 pytest tests
 | GET | `/api/openclaw/status` | OpenClaw online/offline |
 | POST | `/api/openclaw/chat` | Chat (JSON response) |
 | POST | `/api/openclaw/chat/stream` | Chat (SSE streaming) |
+| GET | `/api/auth/status` | Check if setup is needed |
+| POST | `/api/auth/setup` | Create first admin account |
+| POST | `/api/auth/login` | Login and get JWT |
+| GET | `/api/auth/me` | Current user info |
+| GET | `/api/settings/ui` | Get UI settings (public) |
+| PUT | `/api/settings/ui` | Update UI settings (admin) |
+| GET | `/api/settings/services` | Get service configs (admin) |
+| PUT | `/api/settings/services` | Update service configs (admin) |
+| GET | `/api/settings/users` | List users (admin) |
+| POST | `/api/settings/users` | Create user (admin) |
 
 ## Docker Notes
 
@@ -151,7 +187,7 @@ tests/                   # 24 pytest tests
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
-- `0.x.y` — Pre-release development
+- `1.1.0` — Account system, admin settings panel, UI customization
 - `1.0.0` — First stable public release
 
 ## License

@@ -27,7 +27,8 @@ requirements-dev.txt
 .DS_Store
 Thumbs.db
 
-# Secrets & docs
+# Data & secrets
+data/
 .env
 .env.*
 *.md

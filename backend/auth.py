@@ -1,0 +1,157 @@
+"""Authentication: JWT tokens, password hashing, FastAPI dependencies."""
+
+import logging
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+
+import bcrypt
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
+
+from backend import database as db
+
+logger = logging.getLogger("homepulse.auth")
+
+router = APIRouter()
+
+# JWT configuration
+_JWT_SECRET = os.getenv("JWT_SECRET", "")
+if not _JWT_SECRET:
+    _JWT_SECRET = secrets.token_urlsafe(48)
+    logger.info("No JWT_SECRET set — generated ephemeral secret (sessions reset on restart)")
+
+_JWT_ALGORITHM = "HS256"
+_JWT_EXPIRY_HOURS = 24
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+# ── Password helpers ─────────────────────────────────────────────
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+
+# ── JWT helpers ──────────────────────────────────────────────────
+
+def create_token(user_id: int, username: str, is_admin: bool) -> str:
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "is_admin": is_admin,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=_JWT_EXPIRY_HOURS),
+    }
+    return jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALGORITHM)
+
+
+def decode_token(token: str) -> dict:
+    try:
+        data = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+        # Convert sub back to int for internal use
+        data["sub"] = int(data["sub"])
+        return data
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# ── FastAPI dependencies ─────────────────────────────────────────
+
+async def get_current_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
+    """Require a valid JWT. Returns the decoded payload."""
+    if creds is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return decode_token(creds.credentials)
+
+
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Require the current user to be an admin."""
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+# ── Request / response models ────────────────────────────────────
+
+class SetupRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., max_length=50)
+    password: str = Field(..., max_length=128)
+
+
+class TokenResponse(BaseModel):
+    token: str
+    username: str
+    is_admin: bool
+
+
+class CreateUserRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=128)
+    is_admin: bool = False
+
+
+# ── Endpoints ────────────────────────────────────────────────────
+
+@router.get("/status")
+async def auth_status():
+    """Check if any users exist (for first-run setup detection)."""
+    user = await db.fetch_one("SELECT id FROM users LIMIT 1")
+    return {"needs_setup": user is None}
+
+
+@router.post("/setup", response_model=TokenResponse)
+async def setup(req: SetupRequest):
+    """Create the first admin account. Only works when no users exist."""
+    existing = await db.fetch_one("SELECT id FROM users LIMIT 1")
+    if existing:
+        raise HTTPException(status_code=400, detail="Setup already completed")
+
+    pw_hash = hash_password(req.password)
+    user_id = await db.execute_returning_id(
+        "INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
+        (req.username, pw_hash),
+    )
+    token = create_token(user_id, req.username, True)
+    logger.info("Initial admin account created: %s", req.username)
+    return TokenResponse(token=token, username=req.username, is_admin=True)
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login(req: LoginRequest):
+    """Authenticate and return a JWT."""
+    user = await db.fetch_one(
+        "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
+        (req.username,),
+    )
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_token(user["id"], user["username"], bool(user["is_admin"]))
+    return TokenResponse(
+        token=token, username=user["username"], is_admin=bool(user["is_admin"])
+    )
+
+
+@router.get("/me")
+async def me(user: dict = Depends(get_current_user)):
+    """Return current user info from the JWT."""
+    return {
+        "id": user["sub"],
+        "username": user["username"],
+        "is_admin": user["is_admin"],
+    }

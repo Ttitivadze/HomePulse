@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/settings.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9783;</text></svg>">
 </head>
 <body>
@@ -31,6 +32,12 @@
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
         </svg>
         Refresh
+      </button>
+      <button id="settings-btn" class="settings-btn" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
       </button>
       <button id="chat-toggle" class="chat-toggle-btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -142,6 +149,129 @@
     </div>
   </div>
 
+  <!-- Settings Overlay -->
+  <div id="settings-overlay" class="settings-overlay hidden">
+    <div class="settings-container">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button id="settings-close" class="chat-close">&times;</button>
+      </div>
+
+      <!-- Login Form (shown when not authenticated) -->
+      <div id="settings-login" class="settings-login">
+        <div id="setup-notice" class="setup-notice hidden">
+          <strong>Welcome to HomePulse!</strong><br>Create your admin account to get started.
+        </div>
+        <div class="settings-form-group">
+          <label>Username</label>
+          <input type="text" id="auth-username" class="settings-input" autocomplete="username">
+        </div>
+        <div class="settings-form-group">
+          <label>Password</label>
+          <input type="password" id="auth-password" class="settings-input" autocomplete="current-password">
+        </div>
+        <button id="auth-submit" class="settings-save-btn">Login</button>
+        <div id="auth-error" class="settings-error hidden"></div>
+      </div>
+
+      <!-- Settings Panel (shown when authenticated as admin) -->
+      <div id="settings-panel" class="settings-panel hidden">
+        <div class="settings-user-bar">
+          Logged in as <strong id="settings-username"></strong>
+          <button id="settings-logout" class="settings-logout-btn">Logout</button>
+        </div>
+
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="ui">Appearance</button>
+          <button class="settings-tab" data-tab="services">Services</button>
+          <button class="settings-tab" data-tab="users">Accounts</button>
+        </div>
+
+        <!-- UI Tab -->
+        <div id="tab-ui" class="settings-tab-content active">
+          <div class="settings-section">
+            <h3>Colors</h3>
+            <div class="color-grid">
+              <div class="settings-form-group">
+                <label>Accent</label>
+                <input type="color" id="ui-accent-color" class="settings-color-input">
+              </div>
+              <div class="settings-form-group">
+                <label>Background</label>
+                <input type="color" id="ui-bg-primary" class="settings-color-input">
+              </div>
+              <div class="settings-form-group">
+                <label>Sidebar</label>
+                <input type="color" id="ui-bg-secondary" class="settings-color-input">
+              </div>
+              <div class="settings-form-group">
+                <label>Cards</label>
+                <input type="color" id="ui-bg-card" class="settings-color-input">
+              </div>
+              <div class="settings-form-group">
+                <label>Text</label>
+                <input type="color" id="ui-text-primary" class="settings-color-input">
+              </div>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Font</h3>
+            <select id="ui-font-family" class="settings-select">
+              <option value="Inter">Inter</option>
+              <option value="JetBrains Mono">JetBrains Mono</option>
+              <option value="system-ui">System Default</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Fira Sans">Fira Sans</option>
+            </select>
+          </div>
+          <div class="settings-section">
+            <h3>Card Density</h3>
+            <div class="density-options">
+              <label class="density-option"><input type="radio" name="density" value="comfortable" checked> Comfortable</label>
+              <label class="density-option"><input type="radio" name="density" value="compact"> Compact</label>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Section Order</h3>
+            <div id="section-order-list" class="section-order-list"></div>
+          </div>
+          <div class="settings-actions">
+            <button id="ui-save" class="settings-save-btn">Save Changes</button>
+            <button id="ui-reset" class="settings-reset-btn">Reset to Defaults</button>
+          </div>
+        </div>
+
+        <!-- Services Tab -->
+        <div id="tab-services" class="settings-tab-content">
+          <div id="services-form"></div>
+          <div class="settings-actions">
+            <button id="services-save" class="settings-save-btn">Save Changes</button>
+          </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="tab-users" class="settings-tab-content">
+          <div id="users-list"></div>
+          <h3 style="margin-top:20px">Add User</h3>
+          <div class="settings-form-group">
+            <label>Username</label>
+            <input type="text" id="new-username" class="settings-input" autocomplete="off">
+          </div>
+          <div class="settings-form-group">
+            <label>Password</label>
+            <input type="password" id="new-password" class="settings-input" autocomplete="new-password">
+          </div>
+          <div class="settings-form-group">
+            <label class="density-option"><input type="checkbox" id="new-is-admin"> Admin privileges</label>
+          </div>
+          <button id="add-user-btn" class="settings-save-btn">Create User</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/settings.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
