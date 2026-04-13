@@ -1,9 +1,13 @@
 import asyncio
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache
+
+logger = logging.getLogger("homelab.arr")
 
 router = APIRouter()
 
@@ -100,8 +104,10 @@ async def fetch_radarr_data() -> dict:
         cache.put("radarr", data)
         return data
     except httpx.ConnectError:
+        logger.warning("Cannot connect to Radarr at %s", settings.RADARR_URL)
         return {"configured": True, "error": "Cannot connect to Radarr"}
     except Exception as e:
+        logger.exception("Radarr fetch failed")
         return {"configured": True, "error": str(e)}
 
 
@@ -150,8 +156,10 @@ async def fetch_sonarr_data() -> dict:
         cache.put("sonarr", data)
         return data
     except httpx.ConnectError:
+        logger.warning("Cannot connect to Sonarr at %s", settings.SONARR_URL)
         return {"configured": True, "error": "Cannot connect to Sonarr"}
     except Exception as e:
+        logger.exception("Sonarr fetch failed")
         return {"configured": True, "error": str(e)}
 
 
@@ -195,8 +203,10 @@ async def fetch_lidarr_data() -> dict:
         cache.put("lidarr", data)
         return data
     except httpx.ConnectError:
+        logger.warning("Cannot connect to Lidarr at %s", settings.LIDARR_URL)
         return {"configured": True, "error": "Cannot connect to Lidarr"}
     except Exception as e:
+        logger.exception("Lidarr fetch failed")
         return {"configured": True, "error": str(e)}
 
 
@@ -370,12 +380,14 @@ async def fetch_streaming_data() -> dict:
     try:
         results = await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e:
+        logger.exception("Streaming fetch failed")
         return {"configured": True, "error": str(e)}
 
     sessions = []
     errors = []
     for label, res in zip(labels, results):
         if isinstance(res, Exception):
+            logger.warning("Streaming source %s failed: %s", label, res)
             errors.append(f"{label}: {res}")
         else:
             sessions.extend(res)

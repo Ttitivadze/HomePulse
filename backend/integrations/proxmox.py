@@ -1,9 +1,13 @@
 import asyncio
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache
+
+logger = logging.getLogger("homelab.proxmox")
 
 router = APIRouter()
 
@@ -105,10 +109,13 @@ async def fetch_proxmox_data() -> dict:
             return data
 
     except httpx.ConnectError:
+        logger.warning("Cannot connect to Proxmox at %s", settings.PROXMOX_HOST)
         return {"configured": True, "nodes": [], "error": "Cannot connect to Proxmox host"}
-    except httpx.HTTPStatusError:
+    except httpx.HTTPStatusError as e:
+        logger.warning("Proxmox API error: %s", e.response.status_code)
         return {"configured": True, "nodes": [], "error": "Proxmox API error"}
     except Exception as e:
+        logger.exception("Proxmox fetch failed")
         return {"configured": True, "nodes": [], "error": str(e)}
 
 

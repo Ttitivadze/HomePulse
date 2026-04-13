@@ -8,41 +8,44 @@ A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI 
 
 - **Backend**: Python 3.12, FastAPI 0.115.6, Uvicorn
 - **Frontend**: Vanilla JavaScript (ES6+), HTML5, CSS3 — no build step, no framework
-- **Deployment**: Docker + Docker Compose
+- **Deployment**: Docker + Docker Compose (with healthcheck, log rotation, resource limits)
 - **HTTP Client**: httpx (async, shared client for connection reuse)
-- **Config**: Environment variables via python-dotenv + YAML display config
+- **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`)
 - **Testing**: pytest + pytest-asyncio, httpx test client
+- **Logging**: Python `logging` module under the `homelab.*` namespace
 
 ## Repository Structure
 
 ```
 ├── backend/
-│   ├── main.py              # FastAPI app, lifespan, /api/dashboard endpoint
-│   ├── config.py            # Settings class (instance-based, loads env vars)
+│   ├── main.py              # FastAPI app, CORS, lifespan, /api/dashboard endpoint
+│   ├── config.py            # Settings class (env vars + YAML config, validation)
 │   ├── cache.py             # In-memory TTL cache (15s default)
 │   ├── integrations/        # One module per external service
 │   │   ├── proxmox.py       # Proxmox VE API client (parallel node fetches)
-│   │   ├── docker_int.py    # Docker socket integration (parallel stats)
+│   │   ├── docker_int.py    # Docker socket integration (parallel stats, display labels)
 │   │   ├── arr.py           # Radarr/Sonarr/Lidarr + streaming (Jellyfin/Plex/Tautulli)
 │   │   └── openclaw.py      # OpenClaw chat proxy (standard + streaming)
 │   └── static/              # Frontend assets served by FastAPI
-│       ├── index.html
+│       ├── index.html        # Mobile-ready meta tags, dark theme-color
 │       ├── js/app.js         # SPA logic, single-request refresh, streaming chat
 │       └── css/style.css     # Dark theme, responsive grid
 ├── config/
-│   └── config.yml           # Dashboard display settings (section toggles, labels)
+│   └── config.yml           # Dashboard display settings (section toggles, container labels)
 ├── tests/                   # pytest test suite
 │   ├── conftest.py          # Shared fixtures (async_client, cache clearing)
 │   ├── test_health.py       # Health + root endpoint tests
 │   ├── test_dashboard.py    # Aggregated dashboard endpoint tests
-│   ├── test_arr.py          # Radarr/Sonarr/Lidarr/streaming tests
+│   ├── test_arr.py          # Radarr/Sonarr/Lidarr/Jellyfin/Plex/Tautulli streaming tests
 │   ├── test_proxmox.py      # Proxmox endpoint tests
 │   ├── test_docker.py       # Docker endpoint tests
 │   ├── test_openclaw.py     # OpenClaw endpoint tests
 │   └── test_cache.py        # TTL cache unit tests
-├── .env.example             # All required environment variables
-├── Dockerfile               # Python 3.12-slim, single stage
-├── docker-compose.yml       # Port 8450->8000, docker socket mount
+├── .env.example             # All environment variables with descriptions
+├── .dockerignore            # Excludes tests, .git, cache from Docker image
+├── .gitignore               # Python, IDE, OS artifacts
+├── Dockerfile               # Python 3.12-slim, healthcheck, curl
+├── docker-compose.yml       # Port 8450->8000, resource limits, log rotation
 ├── requirements.txt         # Runtime dependencies (pinned versions)
 └── requirements-dev.txt     # Test dependencies (pytest, pytest-asyncio)
 ```
@@ -55,6 +58,8 @@ A Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI 
 cp .env.example .env   # Fill in real values
 docker compose up -d   # Accessible at http://localhost:8450
 ```
+
+Access from any device on the LAN: `http://<server-ip>:8450` — CORS is enabled for all origins.
 
 ### Local development (without Docker)
 
@@ -78,7 +83,7 @@ pytest tests/ -v
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Dashboard UI (serves index.html) |
-| GET | `/api/health` | Health check |
+| GET | `/api/health` | Health check (used by Docker HEALTHCHECK) |
 | GET | `/api/dashboard` | **All sections in one request** (concurrent fetch) |
 | GET | `/api/proxmox/status` | Proxmox nodes, VMs, LXC containers |
 | GET | `/api/docker/containers` | Docker container list with stats |
@@ -94,23 +99,25 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 
 ## Configuration
 
-**Environment variables** (`.env`): Service URLs, API keys, and tokens for all integrations. See `.env.example` for the full list. Never commit `.env` — it contains secrets.
+**Environment variables** (`.env`): Service URLs, API keys, and tokens for all integrations. See `.env.example` for the full list. Never commit `.env` — it contains secrets. Invalid values (e.g. non-numeric `REFRESH_INTERVAL`) are caught at startup with a warning and fall back to defaults.
 
-**Display config** (`config/config.yml`): Dashboard title, refresh interval, section visibility toggles, and friendly Docker container labels. This file is safe to commit.
+**Display config** (`config/config.yml`): Dashboard title, section visibility toggles, and friendly Docker container label mappings. Loaded at startup by `config.py`. This file is safe to commit.
 
 ## Architecture & Conventions
 
 ### Backend
 
 - **Async-first**: All endpoint handlers and HTTP calls are async (`async def`, `httpx.AsyncClient`)
+- **CORS enabled**: `CORSMiddleware` allows all origins so the dashboard works from any LAN device
 - **Concurrent I/O**: `asyncio.gather` for parallel API calls within each integration; `asyncio.to_thread` for blocking Docker stats calls
 - **Shared HTTP client**: `arr.py` maintains a module-level `httpx.AsyncClient` reused by arr + openclaw integrations (avoids per-request TCP/TLS overhead). Closed during app shutdown via the FastAPI lifespan.
 - **TTL cache**: `backend/cache.py` provides a 15-second in-memory cache. Integration `fetch_*` functions check the cache before making external calls. This absorbs brief service outages and reduces redundant requests during the 30-second refresh cycle.
 - **Two-tier data functions**: Each integration exposes `fetch_*_data()` (returns a dict, never raises) and a router endpoint (raises `HTTPException` on error). The dashboard endpoint calls the `fetch_*` functions directly.
 - **Router-per-integration**: Each integration is a separate module with its own `APIRouter`, mounted in `main.py` with a prefix
-- **Settings singleton**: `backend/config.py` exposes a `settings` object with instance attributes — import it, don't instantiate `Settings` again. Instance-based `__init__` allows overriding in tests.
+- **Settings singleton**: `backend/config.py` exposes a `settings` object with instance attributes — import it, don't instantiate `Settings` again. Instance-based `__init__` allows overriding in tests. Loads YAML display config and validates env vars at startup.
 - **Graceful degradation**: Integrations return `{"configured": False}` when unconfigured, or `{"error": "..."}` on failure — never crash the app
 - **Error handling**: Use `fastapi.HTTPException` for individual API errors; the `/api/dashboard` endpoint wraps exceptions per-section
+- **Logging**: All modules use `logging.getLogger("homelab.<module>")`. Errors and connection failures are logged so `docker logs` is useful for debugging.
 
 ### Frontend
 
@@ -124,6 +131,7 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **Module pattern**: `App` object in `app.js` with methods for each dashboard section
 - **XSS prevention**: HTML-escape user content before inserting into DOM
 - **Dark theme**: CSS variables in `style.css` for consistent theming
+- **Mobile-ready**: Viewport, theme-color, and apple-mobile-web-app meta tags
 
 ### Naming & Style
 
@@ -160,6 +168,11 @@ Key patterns:
 
 ## Docker Notes
 
+- **Healthcheck**: Dockerfile and Compose both define a healthcheck against `/api/health`
+- **Log rotation**: Compose limits logs to 3 x 10MB files to prevent disk bloat
+- **Resource limits**: 512MB memory cap (configurable in `docker-compose.yml`)
+- **PYTHONUNBUFFERED=1**: Ensures real-time log output in `docker logs`
+- **`.dockerignore`**: Excludes tests, .git, cache, and docs from the image
 - The Docker socket is mounted read-only (`/var/run/docker.sock:/var/run/docker.sock:ro`) for container monitoring
 - `config/config.yml` is also mounted read-only
 - The container runs as root (required for Docker socket access)
@@ -170,3 +183,4 @@ Key patterns:
 - **Never commit `.env`** — it contains API keys and tokens
 - **Docker socket access** grants significant host privileges; keep the mount read-only
 - The Proxmox integration may disable SSL verification (`PROXMOX_VERIFY_SSL=false`) — this is intentional for self-signed certs in homelab environments
+- If both `PLEX_URL` and `TAUTULLI_URL` are set, you may see duplicate streaming sessions — use one or the other for Plex

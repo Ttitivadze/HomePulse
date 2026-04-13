@@ -1,0 +1,33 @@
+# Dependencies
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Git
+.git/
+.gitignore
+
+# Tests & dev
+tests/
+.pytest_cache/
+requirements-dev.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets & docs
+.env
+.env.*
+*.md

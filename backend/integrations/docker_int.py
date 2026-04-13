@@ -1,6 +1,12 @@
 import asyncio
+import logging
+
 import docker
 from fastapi import APIRouter, HTTPException
+
+from backend.config import settings
+
+logger = logging.getLogger("homelab.docker")
 
 router = APIRouter()
 
@@ -38,10 +44,12 @@ async def fetch_docker_data() -> dict:
         container_info = []
         stats_coros = []
 
+        labels = settings.docker_labels
         for c in containers:
             info = {
                 "id": c.short_id,
                 "name": c.name,
+                "display_name": labels.get(c.name, c.name),
                 "image": c.image.tags[0] if c.image.tags else c.image.short_id,
                 "status": c.status,
                 "state": c.attrs["State"]["Status"],
@@ -67,6 +75,7 @@ async def fetch_docker_data() -> dict:
 
         return {"configured": True, "containers": container_info}
     except Exception as e:
+        logger.exception("Docker fetch failed")
         return {"configured": True, "containers": [], "error": str(e)}
     finally:
         client.close()

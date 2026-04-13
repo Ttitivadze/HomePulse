@@ -230,8 +230,8 @@ const App = {
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="card-name">${c.name}</div>
-            <div class="card-id">${c.image}</div>
+            <div class="card-name">${c.display_name || c.name}</div>
+            <div class="card-id">${c.display_name && c.display_name !== c.name ? c.name + ' &middot; ' : ''}${c.image}</div>
             ${ports}
           </div>
           <span class="status-badge ${c.status}">${c.status}</span>

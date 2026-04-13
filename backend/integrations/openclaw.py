@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -5,6 +7,8 @@ from pydantic import BaseModel
 
 from backend.config import settings
 from backend.integrations.arr import _get_client as _get_shared_client
+
+logger = logging.getLogger("homelab.openclaw")
 
 router = APIRouter()
 
@@ -71,8 +75,10 @@ async def openclaw_chat(request: ChatRequest):
         return {"response": assistant_message}
 
     except httpx.ConnectError:
+        logger.warning("Cannot connect to OpenClaw at %s", settings.OPENCLAW_URL)
         raise HTTPException(status_code=503, detail="Cannot connect to OpenClaw")
     except httpx.HTTPStatusError as e:
+        logger.warning("OpenClaw API error: %s", e.response.status_code)
         raise HTTPException(
             status_code=e.response.status_code, detail="OpenClaw API error"
         )

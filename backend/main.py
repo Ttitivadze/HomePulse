@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -18,18 +20,56 @@ from backend.integrations.arr import (
 )
 from backend.integrations.openclaw import router as openclaw_router
 
+logger = logging.getLogger("homelab")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from backend.config import settings
+
+    configured = []
+    if settings.PROXMOX_HOST:
+        configured.append("Proxmox")
+    if settings.RADARR_URL:
+        configured.append("Radarr")
+    if settings.SONARR_URL:
+        configured.append("Sonarr")
+    if settings.JELLYFIN_URL:
+        configured.append("Jellyfin")
+    if settings.PLEX_URL:
+        configured.append("Plex")
+    if settings.TAUTULLI_URL:
+        configured.append("Tautulli")
+    if settings.OPENCLAW_URL:
+        configured.append("OpenClaw")
+
+    logger.info(
+        "HomeLab Dashboard starting — configured services: %s",
+        ", ".join(configured) if configured else "(none)",
+    )
+    if settings.warnings:
+        for w in settings.warnings:
+            logger.warning(w)
+
     yield
+
     # Shutdown: close the shared httpx client used by arr + openclaw
     from backend.integrations import arr
 
     if arr._client is not None and not arr._client.is_closed:
         await arr._client.aclose()
+    logger.info("HomeLab Dashboard stopped")
 
 
 app = FastAPI(title="HomeLab Dashboard", version="1.0.0", lifespan=lifespan)
+
+# CORS — allow any origin so the dashboard works from any device on the LAN
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # API routes
 app.include_router(proxmox_router, prefix="/api/proxmox", tags=["proxmox"])
@@ -67,6 +107,7 @@ async def dashboard():
 
     def safe(result):
         if isinstance(result, Exception):
+            logger.error("Dashboard section failed: %s", result)
             return {"configured": False, "error": str(result)}
         return result
 
