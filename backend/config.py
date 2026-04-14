@@ -84,10 +84,20 @@ class Settings:
         self.TAUTULLI_URL: str = _get("TAUTULLI_URL").rstrip("/")
         self.TAUTULLI_API_KEY: str = _get("TAUTULLI_API_KEY")
 
-        # OpenClaw
-        self.OPENCLAW_URL: str = _get("OPENCLAW_URL").rstrip("/")
-        self.OPENCLAW_API_KEY: str = _get("OPENCLAW_API_KEY")
-        self.OPENCLAW_MODEL: str = _get("OPENCLAW_MODEL", "default")
+        # Claude
+        self.CLAUDE_API_KEY: str = _get("CLAUDE_API_KEY")
+        self.CLAUDE_MODEL: str = _get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+
+        # Uptime Kuma
+        self.UPTIME_KUMA_URL: str = _get("UPTIME_KUMA_URL").rstrip("/")
+
+        # Infrastructure (NPM for SSL certs)
+        self.NPM_URL: str = _get("NPM_URL").rstrip("/")
+        self.NPM_API_TOKEN: str = _get("NPM_API_TOKEN")
+
+        # Notifications
+        self.TELEGRAM_BOT_TOKEN: str = _get("TELEGRAM_BOT_TOKEN")
+        self.TELEGRAM_CHAT_ID: str = _get("TELEGRAM_CHAT_ID")
 
         # Dashboard
         raw_interval = _get("REFRESH_INTERVAL", "30")
@@ -115,6 +125,10 @@ class Settings:
                 except Exception as e:
                     self.warnings.append(f"Failed to parse {candidate}: {e}")
 
+    def reload(self):
+        """Reload settings from DB overrides, env vars, and YAML."""
+        self.__init__()
+
     def _validate(self):
         """Warn about common misconfigurations at startup."""
         if self.PLEX_URL and self.TAUTULLI_URL:
@@ -137,6 +151,11 @@ class Settings:
     def docker_labels(self) -> dict:
         """Friendly names for Docker containers from config.yml."""
         return self.DISPLAY.get("docker_labels", {})
+
+    @property
+    def docker_links(self) -> dict:
+        """Custom URLs for Docker containers from config.yml."""
+        return self.DISPLAY.get("docker_links", {})
 
     @property
     def dashboard_title(self) -> str:

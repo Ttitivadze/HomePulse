@@ -3,11 +3,13 @@
 import logging
 import os
 import secrets
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -27,6 +29,26 @@ _JWT_ALGORITHM = "HS256"
 _JWT_EXPIRY_HOURS = 24
 
 _bearer = HTTPBearer(auto_error=False)
+
+# ── Rate limiting ───────────────────────────────────────────────
+
+_LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
+_MAX_ATTEMPTS = 5
+_WINDOW_SECONDS = 60
+
+
+def _check_rate_limit(ip: str) -> None:
+    """Raise 429 if too many failed login attempts from this IP."""
+    now = time.time()
+    attempts = _LOGIN_ATTEMPTS[ip]
+    # Prune old attempts
+    _LOGIN_ATTEMPTS[ip] = [t for t in attempts if now - t < _WINDOW_SECONDS]
+    if len(_LOGIN_ATTEMPTS[ip]) >= _MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+
+
+def _record_failed_attempt(ip: str) -> None:
+    _LOGIN_ATTEMPTS[ip].append(time.time())
 
 
 # ── Password helpers ─────────────────────────────────────────────
@@ -140,8 +162,11 @@ _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     """Authenticate and return a JWT."""
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
     user = await db.fetch_one(
         "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
         (req.username,),
@@ -149,10 +174,14 @@ async def login(req: LoginRequest):
     if not user:
         # Timing-safe: always run bcrypt even for non-existent users
         verify_password(req.password, _DUMMY_HASH)
+        _record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not verify_password(req.password, user["password_hash"]):
+        _record_failed_attempt(client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Clear attempts on successful login
+    _LOGIN_ATTEMPTS.pop(client_ip, None)
     token = create_token(user["id"], user["username"], bool(user["is_admin"]))
     return TokenResponse(
         token=token, username=user["username"], is_admin=bool(user["is_admin"])

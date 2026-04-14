@@ -19,8 +19,11 @@ from backend.integrations.arr import (
     fetch_lidarr_data,
     fetch_streaming_data,
 )
-from backend.integrations.openclaw import router as openclaw_router
+from backend.integrations.claude_chat import router as claude_router
+from backend.integrations.uptime_kuma import router as uptime_kuma_router, fetch_uptime_kuma_data
+from backend.integrations.infrastructure import router as infra_router, fetch_infrastructure_data
 from backend.integrations.settings import router as settings_router
+from backend.notifications import router as notifications_router
 from backend.auth import router as auth_router
 from backend.config import settings
 
@@ -47,8 +50,12 @@ async def lifespan(app: FastAPI):
         configured.append("Plex")
     if settings.TAUTULLI_URL:
         configured.append("Tautulli")
-    if settings.OPENCLAW_URL:
-        configured.append("OpenClaw")
+    if settings.CLAUDE_API_KEY:
+        configured.append("Claude")
+    if settings.UPTIME_KUMA_URL:
+        configured.append("Uptime Kuma")
+    if settings.TELEGRAM_BOT_TOKEN:
+        configured.append("Telegram Notifications")
 
     # Initialize the database
     from backend import database as db
@@ -105,9 +112,12 @@ app.add_middleware(
 app.include_router(proxmox_router, prefix="/api/proxmox", tags=["proxmox"])
 app.include_router(docker_router, prefix="/api/docker", tags=["docker"])
 app.include_router(arr_router, prefix="/api/arr", tags=["arr"])
-app.include_router(openclaw_router, prefix="/api/openclaw", tags=["openclaw"])
+app.include_router(claude_router, prefix="/api/claude", tags=["claude"])
+app.include_router(uptime_kuma_router, prefix="/api/uptime-kuma", tags=["uptime-kuma"])
+app.include_router(infra_router, prefix="/api/infrastructure", tags=["infrastructure"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
 
 # Static files
 static_dir = Path(__file__).parent / "static"
@@ -138,6 +148,8 @@ async def dashboard():
         fetch_sonarr_data(),
         fetch_lidarr_data(),
         fetch_streaming_data(),
+        fetch_uptime_kuma_data(),
+        fetch_infrastructure_data(),
         return_exceptions=True,
     )
 
@@ -147,7 +159,7 @@ async def dashboard():
             return {"configured": False, "error": "Service unavailable"}
         return result
 
-    proxmox, docker, radarr, sonarr, lidarr, streaming = results
+    proxmox, docker, radarr, sonarr, lidarr, streaming, uptime_kuma, infrastructure = results
 
     return {
         "proxmox": safe(proxmox),
@@ -156,5 +168,7 @@ async def dashboard():
         "sonarr": safe(sonarr),
         "lidarr": safe(lidarr),
         "streaming": safe(streaming),
+        "uptime_kuma": safe(uptime_kuma),
+        "infrastructure": safe(infrastructure),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

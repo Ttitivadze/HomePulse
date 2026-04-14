@@ -8,19 +8,37 @@ const App = {
   refreshInterval: null,
   isLoading: false,
   lastUpdated: null,
-  openclawOnline: false,
+  claudeOnline: false,
   MAX_CHAT_HISTORY: 50,
   _timestampTimer: null,
 
   init() {
+    this.initTheme();
     this.bindEvents();
     this.loadDashboard();
     this.startAutoRefresh();
-    this.checkOpenClawStatus();
+    this.checkClaudeStatus();
+  },
+
+  initTheme() {
+    const saved = localStorage.getItem('hp_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) btn.textContent = saved === 'dark' ? '\u2600' : '\u263E';
+  },
+
+  toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('hp_theme', next);
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) btn.textContent = next === 'dark' ? '\u2600' : '\u263E';
   },
 
   bindEvents() {
     document.getElementById('refresh-btn').addEventListener('click', () => this.loadDashboard());
+    document.getElementById('theme-toggle-btn').addEventListener('click', () => this.toggleTheme());
     document.getElementById('chat-toggle').addEventListener('click', () => this.toggleChat());
     document.getElementById('chat-close').addEventListener('click', () => this.toggleChat());
     document.getElementById('chat-send').addEventListener('click', () => this.sendMessage());
@@ -59,6 +77,8 @@ const App = {
       this.safeRender('docker-content', 'Docker', 'docker', () => this.renderDocker(data.docker));
       this.safeRender('arr-content', 'Arr Suite', 'arr', () => this.renderArr(data.radarr, data.sonarr, data.lidarr));
       this.safeRender('streaming-content', 'Streaming', 'streaming', () => this.renderStreaming(data.streaming));
+      if (data.uptime_kuma) this.safeRender('uptime-content', 'Uptime', 'uptime', () => this.renderUptimeKuma(data.uptime_kuma));
+      if (data.infrastructure) this.safeRender('infra-content', 'Infrastructure', 'infrastructure', () => this.renderInfrastructure(data.infrastructure));
       this.updateTimestamp(data.timestamp);
     } catch (e) {
       console.error('Dashboard load failed:', e);
@@ -268,6 +288,7 @@ const App = {
     for (const inst of instances) {
       if (!inst.configured && !inst.error) continue;
       const hostUrl = inst.host_url || '';
+      const dockerLinks = inst.docker_links || {};
       const instContainers = inst.containers || [];
       totalContainers += instContainers.length;
       totalRunning += instContainers.filter(c => c.status === 'running').length;
@@ -283,10 +304,10 @@ const App = {
         const instRunning = instContainers.filter(c => c.status === 'running').length;
         html += `<div class="instance-group">
           <div class="instance-header">${esc(inst.name)} <span class="instance-badge">${instRunning}/${instContainers.length}</span></div>
-          <div class="card-grid">${instContainers.map(c => this.renderDockerCard(c, hostUrl)).join('')}</div>
+          <div class="card-grid">${instContainers.map(c => this.renderDockerCard(c, hostUrl, dockerLinks)).join('')}</div>
         </div>`;
       } else {
-        html += `<div class="card-grid">${instContainers.map(c => this.renderDockerCard(c, hostUrl)).join('')}</div>`;
+        html += `<div class="card-grid">${instContainers.map(c => this.renderDockerCard(c, hostUrl, dockerLinks)).join('')}</div>`;
       }
     }
 
@@ -294,17 +315,21 @@ const App = {
     container.innerHTML = html;
   },
 
-  renderDockerCard(c, hostUrl) {
+  renderDockerCard(c, hostUrl, dockerLinks) {
     const esc = (s) => this.escapeHtml(String(s ?? ''));
     const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
     const memPercent = c.mem_limit > 0 ? Math.round((c.mem_usage / c.mem_limit) * 100) : 0;
 
-    // Build link from first mapped host port (validate numeric)
-    const ports = Array.isArray(c.ports) ? c.ports : [];
-    const rawPort = ports.length ? ports[0].split('->')[0] : null;
-    const firstHostPort = rawPort && /^\d+$/.test(rawPort) ? rawPort : null;
-    const baseUrl = hostUrl || ('http://' + window.location.hostname);
-    const linkUrl = firstHostPort ? `${baseUrl}:${firstHostPort}` : null;
+    // Use custom link from docker_links config if available, else build from host port
+    const customLink = (dockerLinks || {})[c.name] || null;
+    let linkUrl = customLink;
+    if (!linkUrl) {
+      const ports = Array.isArray(c.ports) ? c.ports : [];
+      const rawPort = ports.length ? ports[0].split('->')[0] : null;
+      const firstHostPort = rawPort && /^\d+$/.test(rawPort) ? rawPort : null;
+      const baseUrl = hostUrl || ('http://' + window.location.hostname);
+      linkUrl = firstHostPort ? `${baseUrl}:${firstHostPort}` : null;
+    }
     const linkHtml = linkUrl
       ? ` <a href="${escAttr(linkUrl)}" target="_blank" rel="noopener" class="card-link" title="Open in new tab">&#8599;</a>`
       : '';
@@ -314,7 +339,7 @@ const App = {
         <div class="card-header">
           <span class="status-badge ${c.status}">${esc(c.status)}</span>
           <div class="card-name-group">
-            <div class="card-name">${esc(c.display_name || c.name)}${linkHtml}</div>
+            <div class="card-name">${esc(c.display_name || c.name)}${linkHtml}${c.update_available ? ' <span class="update-badge">Update</span>' : ''}</div>
             ${c.display_name && c.display_name !== c.name ? `<div class="card-id">${esc(c.name)}</div>` : ''}
           </div>
         </div>
@@ -463,17 +488,17 @@ const App = {
     else el.textContent = `Updated ${Math.floor(seconds / 60)}m ago`;
   },
 
-  // ── OpenClaw Chat ──────────────────────────────────────────────
+  // ── Claude Chat ──────────────────────────────────────────────
 
-  async checkOpenClawStatus() {
+  async checkClaudeStatus() {
     const statusEl = document.getElementById('chat-status');
     try {
-      const data = await this.fetch('/api/openclaw/status');
-      this.openclawOnline = data.status === 'online';
-      statusEl.textContent = this.openclawOnline ? 'Online' : 'Offline';
-      statusEl.className = 'chat-status ' + (this.openclawOnline ? 'online' : 'offline');
+      const data = await this.fetch('/api/claude/status');
+      this.claudeOnline = data.status === 'online';
+      statusEl.textContent = this.claudeOnline ? 'Online' : 'Offline';
+      statusEl.className = 'chat-status ' + (this.claudeOnline ? 'online' : 'offline');
     } catch {
-      this.openclawOnline = false;
+      this.claudeOnline = false;
       statusEl.textContent = 'Offline';
       statusEl.className = 'chat-status offline';
     }
@@ -487,9 +512,9 @@ const App = {
     dashboard.classList.toggle('chat-open', this.chatOpen);
 
     if (this.chatOpen) {
-      this.checkOpenClawStatus();
+      this.checkClaudeStatus();
       if (this.chatMessages.length === 0) {
-        this.addChatMessage('assistant', 'Hello! I\'m OpenClaw, your homelab AI assistant. Ask me anything about your infrastructure, services, or let me help you troubleshoot issues.');
+        this.addChatMessage('assistant', 'Hello! I\'m Claude, your homelab AI assistant. Ask me anything about your infrastructure, services, or let me help you troubleshoot issues.');
       }
     }
   },
@@ -536,7 +561,7 @@ const App = {
 
     // Try streaming first, fall back to non-streaming
     try {
-      const resp = await fetch('/api/openclaw/chat/stream', {
+      const resp = await fetch('/api/claude/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: payload }),
@@ -544,7 +569,7 @@ const App = {
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail || 'OpenClaw request failed');
+        throw new Error(err.detail || 'Claude request failed');
       }
 
       // Stream the response token-by-token
@@ -590,19 +615,19 @@ const App = {
     } catch (e) {
       // Streaming failed — try non-streaming endpoint
       try {
-        const resp = await this.fetchRaw('/api/openclaw/chat', {
+        const resp = await this.fetchRaw('/api/claude/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: payload }),
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
-          throw new Error(err.detail || 'OpenClaw request failed');
+          throw new Error(err.detail || 'Claude request failed');
         }
         const data = await resp.json();
         this.addChatMessage('assistant', data.response);
       } catch (e2) {
-        this.addChatMessage('assistant', `Error: ${e2.message}. Make sure OpenClaw is configured and running.`);
+        this.addChatMessage('assistant', `Error: ${e2.message}. Make sure Claude is configured and running.`);
       }
     } finally {
       sendBtn.disabled = false;
@@ -678,6 +703,120 @@ const App = {
     } catch (e) {
       container.innerHTML = this.renderErrorCard(service, e, section);
     }
+  },
+  // ── Uptime Kuma ──────────────────────────────────────────────────
+
+  renderUptimeKuma(data) {
+    const container = document.getElementById('uptime-content');
+    const badge = document.getElementById('uptime-badge');
+    if (!container) return;
+
+    if (!data || !data.configured) {
+      container.innerHTML = this.notConfigured('Uptime Kuma');
+      badge.textContent = '-';
+      return;
+    }
+
+    const statusColor = data.status === 'online' ? '#22c55e' : data.status === 'degraded' ? '#eab308' : '#ef4444';
+    const statusText = data.status === 'online' ? 'Online' : data.status === 'degraded' ? 'Degraded' : 'Offline';
+    badge.textContent = statusText;
+    badge.style.background = statusColor;
+
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
+    const linkHtml = data.url ? ` <a href="${escAttr(data.url)}" target="_blank" rel="noopener" class="card-link" title="Open Uptime Kuma">&#8599;</a>` : '';
+
+    container.innerHTML = `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">Uptime Kuma${linkHtml}</span>
+            <span class="status-badge status-${data.status === 'online' ? 'running' : 'stopped'}">${esc(statusText)}</span>
+          </div>
+          <div class="card-body" style="text-align:center;padding:20px;color:var(--text-secondary);">
+            ${data.status === 'online' ? 'Monitoring dashboard is healthy' : 'Monitoring dashboard is unreachable'}
+          </div>
+        </div>
+      </div>`;
+  },
+
+  // ── Infrastructure ─────────────────────────────────────────────
+
+  renderInfrastructure(data) {
+    const container = document.getElementById('infra-content');
+    if (!container) return;
+
+    if (!data || !data.configured) {
+      container.innerHTML = this.notConfigured('Infrastructure');
+      return;
+    }
+
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    let html = '<div class="card-grid">';
+
+    // Storage cards
+    for (const s of (data.storage || [])) {
+      const color = s.percent >= 90 ? '#ef4444' : s.percent >= 70 ? '#eab308' : '#22c55e';
+      html += `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">${esc(s.name)}</span>
+            <span style="color:${color};font-weight:600;">${s.percent}%</span>
+          </div>
+          <div class="card-body">
+            <div class="resource-bar"><div class="resource-fill" style="width:${Math.min(s.percent, 100)}%;background:${color}"></div></div>
+            <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px">${this.formatBytes(s.used)} / ${this.formatBytes(s.total)}</div>
+          </div>
+        </div>`;
+    }
+
+    // Backup cards
+    for (const b of (data.backups || [])) {
+      const statusColor = b.status === 'ok' ? '#22c55e' : '#ef4444';
+      const timeAgo = b.last_time ? this.formatRelativeTime(b.last_time) : 'Never';
+      html += `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">Backup: ${esc(b.name)}</span>
+            <span class="status-badge" style="background:${statusColor}">${b.status === 'ok' ? 'OK' : 'Failed'}</span>
+          </div>
+          <div class="card-body" style="font-size:0.8rem;color:var(--text-secondary);">
+            Last: ${esc(timeAgo)}
+          </div>
+        </div>`;
+    }
+
+    // SSL cert cards
+    for (const c of (data.ssl_certs || [])) {
+      const color = c.days_left > 30 ? '#22c55e' : c.days_left > 7 ? '#eab308' : '#ef4444';
+      html += `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">${esc(c.name)}</span>
+            <span style="color:${color};font-weight:600;">${c.days_left}d</span>
+          </div>
+          <div class="card-body" style="font-size:0.8rem;color:var(--text-secondary);">
+            Expires: ${esc(c.expires_on)}
+          </div>
+        </div>`;
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+  },
+
+  formatRelativeTime(isoStr) {
+    try {
+      const date = new Date(isoStr);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}d ago`;
+    } catch { return isoStr; }
   },
 };
 

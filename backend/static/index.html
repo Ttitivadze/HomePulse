@@ -40,11 +40,12 @@
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
       </button>
+      <button id="theme-toggle-btn" class="theme-toggle-btn" title="Toggle theme">&#9788;</button>
       <button id="chat-toggle" class="chat-toggle-btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
-        OpenClaw
+        Claude
       </button>
     </div>
   </header>
@@ -123,15 +124,47 @@
         </div>
       </div>
 
+      <!-- Uptime Kuma Section -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon uptime-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+          </div>
+          <span class="section-title">Uptime</span>
+          <span id="uptime-badge" class="section-badge">...</span>
+        </div>
+        <div id="uptime-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
+      <!-- Infrastructure Section -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon infra-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+              <line x1="4" y1="22" x2="4" y2="15"></line>
+            </svg>
+          </div>
+          <span class="section-title">Infrastructure</span>
+        </div>
+        <div id="infra-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Chat Panel -->
     <div id="chat-panel" class="chat-panel">
       <div class="chat-header">
         <div class="chat-header-left">
-          <div class="chat-avatar">OC</div>
+          <div class="chat-avatar">C</div>
           <div>
-            <div class="chat-title">OpenClaw Assistant</div>
+            <div class="chat-title">Claude Assistant</div>
             <div id="chat-status" class="chat-status">Checking...</div>
           </div>
         </div>
@@ -139,7 +172,7 @@
       </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div class="chat-input-area">
-        <textarea id="chat-input" class="chat-input" placeholder="Ask OpenClaw anything..." rows="1"></textarea>
+        <textarea id="chat-input" class="chat-input" placeholder="Ask Claude anything..." rows="1"></textarea>
         <button id="chat-send" class="chat-send" title="Send">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"></line>
