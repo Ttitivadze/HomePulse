@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache
+from backend.cache import TTL
 
 logger = logging.getLogger("homepulse.infrastructure")
 
@@ -233,7 +234,7 @@ async def _fetch_ssl_data() -> list:
 
 async def fetch_infrastructure_data() -> dict:
     """Fetch all infrastructure data. Returns a dict; never raises."""
-    cached = cache.get("infrastructure", ttl=60)
+    cached = cache.get("infrastructure", ttl=TTL.INFRASTRUCTURE)
     if cached is not None:
         return cached
 

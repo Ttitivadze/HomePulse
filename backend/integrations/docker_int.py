@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache, database as db
+from backend.cache import TTL
 from backend.integrations.docker_updates import annotate_update_available
 
 logger = logging.getLogger("homepulse.docker")
@@ -129,7 +130,7 @@ async def fetch_docker_data() -> dict:
             return {"configured": True, "containers": [], "host_url": settings.DOCKER_URL, "docker_links": settings.docker_links, "error": access_err}
         return {"configured": False, "containers": []}
 
-    cached = cache.get("docker:default", ttl=30)
+    cached = cache.get("docker:default", ttl=TTL.DOCKER_STATS)
     if cached is not None:
         return cached
 

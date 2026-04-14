@@ -31,12 +31,14 @@ import logging
 from typing import Any
 
 from backend import cache
+from backend.cache import TTL
 from backend.config import settings
 
 logger = logging.getLogger("homepulse.docker_updates")
 
-# 6 hours — matches Docker Hub's unauthenticated rate-limit window.
-_CACHE_TTL_SECONDS = 6 * 60 * 60
+# Cache policy lives in backend.cache.TTL — re-exported here for tests
+# that want to assert on the actual number of seconds in use.
+_CACHE_TTL_SECONDS = TTL.REGISTRY_UPDATE
 
 # Max number of uncached registry lookups per call. Prevents a cold cache
 # on a host with many containers from spiking the rate-limit budget.

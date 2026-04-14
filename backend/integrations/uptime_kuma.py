@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache
+from backend.cache import TTL
 
 logger = logging.getLogger("homepulse.uptime_kuma")
 
@@ -120,7 +121,7 @@ async def fetch_uptime_kuma_data() -> dict:
     if not settings.UPTIME_KUMA_URL:
         return {"configured": False}
 
-    cached = cache.get("uptime_kuma", ttl=30)
+    cached = cache.get("uptime_kuma", ttl=TTL.UPTIME_KUMA)
     if cached is not None:
         return cached
 
