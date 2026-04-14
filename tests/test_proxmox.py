@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from backend.integrations.proxmox import fetch_proxmox_data
 
@@ -14,9 +14,13 @@ async def test_proxmox_not_configured():
 
 @pytest.mark.asyncio
 async def test_proxmox_endpoint_returns_data(async_client):
-    mock_data = {"configured": True, "nodes": []}
+    mock_data = {
+        "configured": True,
+        "instances": [{"name": "Default", "configured": True, "nodes": [], "url": "https://test:8006"}],
+    }
     with patch(
-        "backend.integrations.proxmox.fetch_proxmox_data",
+        "backend.integrations.proxmox.fetch_all_proxmox_data",
+        new_callable=AsyncMock,
         return_value=mock_data,
     ):
         async with async_client as client:
@@ -27,9 +31,13 @@ async def test_proxmox_endpoint_returns_data(async_client):
 
 @pytest.mark.asyncio
 async def test_proxmox_endpoint_returns_503_on_error(async_client):
-    mock_data = {"configured": True, "nodes": [], "error": "Cannot connect"}
+    mock_data = {
+        "configured": True,
+        "instances": [{"name": "Default", "configured": True, "nodes": [], "error": "Cannot connect"}],
+    }
     with patch(
-        "backend.integrations.proxmox.fetch_proxmox_data",
+        "backend.integrations.proxmox.fetch_all_proxmox_data",
+        new_callable=AsyncMock,
         return_value=mock_data,
     ):
         async with async_client as client:

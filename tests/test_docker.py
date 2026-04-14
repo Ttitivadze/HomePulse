@@ -13,9 +13,12 @@ async def test_docker_not_configured():
 
 @pytest.mark.asyncio
 async def test_docker_endpoint_returns_data(async_client):
-    mock_data = {"configured": True, "containers": []}
+    mock_data = {
+        "configured": True,
+        "instances": [{"name": "Default", "configured": True, "containers": [], "host_url": ""}],
+    }
     with patch(
-        "backend.integrations.docker_int.fetch_docker_data",
+        "backend.integrations.docker_int.fetch_all_docker_data",
         new_callable=AsyncMock,
         return_value=mock_data,
     ):
