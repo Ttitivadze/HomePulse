@@ -2,7 +2,11 @@
 
 A self-hosted monitoring dashboard for your homelab. See your entire infrastructure at a glance — Proxmox nodes, Docker containers, media libraries, active streams, and an AI chat assistant — all in one dark-themed, mobile-friendly page.
 
-![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green) ![License: MIT](https://img.shields.io/badge/license-MIT-purple)
+[![tests](https://github.com/Ttitivadze/HomePulse/actions/workflows/tests.yml/badge.svg)](https://github.com/Ttitivadze/HomePulse/actions/workflows/tests.yml)
+[![docker](https://github.com/Ttitivadze/HomePulse/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Ttitivadze/HomePulse/actions/workflows/docker-publish.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
+![License: MIT](https://img.shields.io/badge/license-MIT-purple)
 
 ## Changelog
 
