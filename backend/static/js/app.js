@@ -144,14 +144,38 @@ const App = {
       return;
     }
     if (!data.configured) {
-      container.innerHTML = this.notConfigured('Proxmox', 'Set PROXMOX_HOST and API token in .env');
+      container.innerHTML = this.notConfigured('Proxmox', 'Set PROXMOX_HOST and API token in .env or add an instance in Settings');
       return;
     }
+
     const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
-    const openBtn = data.url
-      ? `<a href="${escAttr(data.url)}" target="_blank" rel="noopener" class="section-open-btn" title="Open Proxmox">Open &#8599;</a>`
-      : '';
-    container.innerHTML = openBtn + data.nodes.map(node => this.renderNode(node)).join('');
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const instances = data.instances || [data];
+    const multiInstance = instances.length > 1;
+
+    let html = '';
+    for (const inst of instances) {
+      if (!inst.configured && !inst.error) continue;
+      const openBtn = inst.url
+        ? `<a href="${escAttr(inst.url)}" target="_blank" rel="noopener" class="section-open-btn" title="Open Proxmox">Open &#8599;</a>`
+        : '';
+
+      if (inst.error) {
+        html += multiInstance
+          ? `<div class="instance-group"><div class="instance-header">${esc(inst.name || 'Proxmox')} ${openBtn}</div>${this.errorCard('Proxmox', inst.error, 'proxmox')}</div>`
+          : openBtn + this.errorCard('Proxmox', inst.error, 'proxmox');
+        continue;
+      }
+
+      if (multiInstance) {
+        html += `<div class="instance-group"><div class="instance-header">${esc(inst.name)} ${openBtn}</div>`;
+        html += inst.nodes.map(node => this.renderNode(node)).join('');
+        html += `</div>`;
+      } else {
+        html += openBtn + inst.nodes.map(node => this.renderNode(node)).join('');
+      }
+    }
+    container.innerHTML = html;
   },
 
   renderNode(node) {
@@ -220,14 +244,46 @@ const App = {
       return;
     }
     if (!data.configured) {
-      container.innerHTML = this.notConfigured('Docker', 'Mount /var/run/docker.sock in docker-compose.yml');
+      container.innerHTML = this.notConfigured('Docker', 'Mount /var/run/docker.sock or add a Docker instance in Settings');
       badge.textContent = '0';
       return;
     }
-    const hostUrl = data.host_url || '';
-    const running = data.containers.filter(c => c.status === 'running').length;
-    badge.textContent = `${running}/${data.containers.length}`;
-    container.innerHTML = `<div class="card-grid">${data.containers.map(c => this.renderDockerCard(c, hostUrl)).join('')}</div>`;
+
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const instances = data.instances || [data];
+    const multiInstance = instances.length > 1;
+
+    let totalRunning = 0;
+    let totalContainers = 0;
+    let html = '';
+
+    for (const inst of instances) {
+      if (!inst.configured && !inst.error) continue;
+      const hostUrl = inst.host_url || '';
+      const instContainers = inst.containers || [];
+      totalContainers += instContainers.length;
+      totalRunning += instContainers.filter(c => c.status === 'running').length;
+
+      if (inst.error) {
+        html += multiInstance
+          ? `<div class="instance-group"><div class="instance-header">${esc(inst.name || 'Docker')}</div>${this.errorCard('Docker', inst.error, 'docker')}</div>`
+          : this.errorCard('Docker', inst.error, 'docker');
+        continue;
+      }
+
+      if (multiInstance) {
+        const instRunning = instContainers.filter(c => c.status === 'running').length;
+        html += `<div class="instance-group">
+          <div class="instance-header">${esc(inst.name)} <span class="instance-badge">${instRunning}/${instContainers.length}</span></div>
+          <div class="card-grid">${instContainers.map(c => this.renderDockerCard(c, hostUrl)).join('')}</div>
+        </div>`;
+      } else {
+        html += `<div class="card-grid">${instContainers.map(c => this.renderDockerCard(c, hostUrl)).join('')}</div>`;
+      }
+    }
+
+    badge.textContent = `${totalRunning}/${totalContainers}`;
+    container.innerHTML = html;
   },
 
   renderDockerCard(c, hostUrl) {

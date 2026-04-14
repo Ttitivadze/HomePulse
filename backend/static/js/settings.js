@@ -297,7 +297,11 @@ const Settings = {
     const container = document.getElementById('services-form');
     container.innerHTML = '<div class="loading-skeleton" style="height:200px"></div>';
     try {
-      const data = await Auth.apiJson('/api/settings/services');
+      const [data, instances] = await Promise.all([
+        Auth.apiJson('/api/settings/services'),
+        Auth.apiJson('/api/settings/instances'),
+      ]);
+
       const groups = {
         'Proxmox': ['PROXMOX_HOST', 'PROXMOX_USER', 'PROXMOX_TOKEN_NAME', 'PROXMOX_TOKEN_VALUE', 'PROXMOX_VERIFY_SSL'],
         'Docker': ['DOCKER_URL'],
@@ -311,8 +315,26 @@ const Settings = {
         'Dashboard': ['REFRESH_INTERVAL'],
       };
 
+      // Config fields for each instance type
+      this._instanceFields = {
+        proxmox: [
+          { key: 'host', label: 'Host URL', type: 'text', placeholder: 'https://192.168.1.200:8006' },
+          { key: 'user', label: 'User', type: 'text', placeholder: 'root@pam' },
+          { key: 'token_name', label: 'Token Name', type: 'text', placeholder: 'dashboard' },
+          { key: 'token_value', label: 'Token Value', type: 'password', placeholder: 'API token' },
+          { key: 'verify_ssl', label: 'Verify SSL', type: 'text', placeholder: 'false' },
+        ],
+        docker: [
+          { key: 'host', label: 'Docker Host', type: 'text', placeholder: 'tcp://192.168.1.200:2375' },
+          { key: 'url', label: 'Access URL', type: 'text', placeholder: 'http://192.168.1.200' },
+        ],
+      };
+
       let html = '';
       for (const [group, keys] of Object.entries(groups)) {
+        const serviceType = group.toLowerCase();
+        const canAddInstance = serviceType === 'proxmox' || serviceType === 'docker';
+
         html += `<div class="settings-section"><h3>${group}</h3>`;
         for (const key of keys) {
           const info = data[key] || {};
@@ -326,11 +348,151 @@ const Settings = {
               <input type="${type}" class="settings-input service-input" data-key="${key}" value="${this._escAttr(val)}" placeholder="From .env">
             </div>`;
         }
+
+        // Show existing additional instances for this service type
+        if (canAddInstance) {
+          const typeInstances = instances.filter(i => i.service_type === serviceType);
+          for (const inst of typeInstances) {
+            html += this._renderInstanceCard(inst);
+          }
+          html += `<button class="instance-add-btn" onclick="Settings.showAddInstance('${serviceType}')">+ Add ${group} Instance</button>`;
+          html += `<div id="instance-form-${serviceType}" class="instance-form hidden"></div>`;
+        }
+
         html += '</div>';
       }
       container.innerHTML = html;
     } catch (e) {
       container.innerHTML = `<div class="settings-error">${this._escHtml(e.message)}</div>`;
+    }
+  },
+
+  _renderInstanceCard(inst) {
+    const esc = (s) => this._escHtml(String(s ?? ''));
+    const escAttr = (s) => this._escAttr(String(s ?? ''));
+    const config = inst.config || {};
+    const fields = this._instanceFields[inst.service_type] || [];
+
+    let fieldsHtml = '';
+    for (const f of fields) {
+      const val = config[f.key] ?? '';
+      fieldsHtml += `
+        <div class="settings-form-group">
+          <label>${f.label}</label>
+          <input type="${f.type}" class="settings-input instance-field" data-instance-id="${inst.id}" data-config-key="${escAttr(f.key)}" value="${escAttr(val)}" placeholder="${escAttr(f.placeholder || '')}">
+        </div>`;
+    }
+
+    return `
+      <div class="instance-card" data-instance-id="${inst.id}">
+        <div class="instance-card-header">
+          <input type="text" class="settings-input instance-name-input" data-instance-id="${inst.id}" value="${escAttr(inst.instance_name)}" placeholder="Instance name">
+          <div class="instance-card-actions">
+            <button class="instance-action-btn" onclick="Settings.saveInstance(${inst.id})" title="Save">Save</button>
+            <button class="instance-action-btn" onclick="Settings.testInstance(${inst.id})" title="Test">Test</button>
+            <button class="instance-action-btn danger" onclick="Settings.deleteInstance(${inst.id}, '${escAttr(inst.instance_name)}')" title="Delete">Delete</button>
+          </div>
+        </div>
+        ${fieldsHtml}
+      </div>`;
+  },
+
+  showAddInstance(serviceType) {
+    const formEl = document.getElementById(`instance-form-${serviceType}`);
+    if (!formEl || !formEl.classList.contains('hidden')) return;
+
+    const fields = this._instanceFields[serviceType] || [];
+    let html = `
+      <div class="instance-card new-instance">
+        <div class="settings-form-group">
+          <label>Instance Name</label>
+          <input type="text" class="settings-input" id="new-instance-name-${serviceType}" placeholder="e.g. Office Server">
+        </div>`;
+    for (const f of fields) {
+      html += `
+        <div class="settings-form-group">
+          <label>${f.label}</label>
+          <input type="${f.type}" class="settings-input" id="new-instance-${serviceType}-${f.key}" placeholder="${this._escAttr(f.placeholder || '')}">
+        </div>`;
+    }
+    html += `
+        <div class="instance-card-actions" style="margin-top:8px">
+          <button class="instance-action-btn" onclick="Settings.createInstance('${serviceType}')">Create</button>
+          <button class="instance-action-btn" onclick="document.getElementById('instance-form-${serviceType}').classList.add('hidden')">Cancel</button>
+        </div>
+      </div>`;
+
+    formEl.innerHTML = html;
+    formEl.classList.remove('hidden');
+  },
+
+  async createInstance(serviceType) {
+    const nameEl = document.getElementById(`new-instance-name-${serviceType}`);
+    const name = nameEl ? nameEl.value.trim() : '';
+    if (!name) { this.showToast('Instance name is required', true); return; }
+
+    const fields = this._instanceFields[serviceType] || [];
+    const config = {};
+    for (const f of fields) {
+      const el = document.getElementById(`new-instance-${serviceType}-${f.key}`);
+      if (el && el.value) config[f.key] = el.value;
+    }
+
+    if (!config.host) { this.showToast('Host is required', true); return; }
+
+    try {
+      await Auth.apiJson('/api/settings/instances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_type: serviceType, instance_name: name, config }),
+      });
+      this.showToast(`Instance '${name}' created. Restart to apply.`);
+      this.loadServices();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  async saveInstance(instanceId) {
+    const nameInput = document.querySelector(`.instance-name-input[data-instance-id="${instanceId}"]`);
+    const fieldInputs = document.querySelectorAll(`.instance-field[data-instance-id="${instanceId}"]`);
+
+    const config = {};
+    fieldInputs.forEach(input => { config[input.dataset.configKey] = input.value; });
+
+    try {
+      await Auth.apiJson(`/api/settings/instances/${instanceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instance_name: nameInput ? nameInput.value.trim() : undefined, config }),
+      });
+      this.showToast('Instance saved. Restart to apply.');
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  async testInstance(instanceId) {
+    try {
+      const data = await Auth.apiJson(`/api/settings/instances/${instanceId}/test`, { method: 'POST' });
+      if (data.status === 'ok') {
+        this.showToast(`Connection OK (HTTP ${data.code})`);
+      } else {
+        this.showToast(data.message || 'Connection failed', true);
+      }
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  async deleteInstance(instanceId, name) {
+    if (!confirm(`Delete instance '${name}'? This cannot be undone.`)) return;
+    try {
+      await Auth.apiJson(`/api/settings/instances/${instanceId}`, { method: 'DELETE' });
+      this.showToast(`Instance '${name}' deleted`);
+      this.loadServices();
+    } catch (e) {
+      this.showToast(e.message, true);
     }
   },
 
