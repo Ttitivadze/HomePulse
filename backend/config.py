@@ -86,7 +86,7 @@ class Settings:
 
         # Claude
         self.CLAUDE_API_KEY: str = _get("CLAUDE_API_KEY")
-        self.CLAUDE_MODEL: str = _get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+        self.CLAUDE_MODEL: str = _get("CLAUDE_MODEL", "claude-sonnet-4-5")
 
         # Uptime Kuma
         self.UPTIME_KUMA_URL: str = _get("UPTIME_KUMA_URL").rstrip("/")

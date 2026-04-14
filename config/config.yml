@@ -10,7 +10,10 @@ sections:
   proxmox: true
   docker: true
   arr_suite: true
-  openclaw_chat: true
+  streaming: true
+  uptime_kuma: true
+  infrastructure: true
+  claude_chat: true
 
 # Custom labels for Docker containers (optional)
 # Maps container name to a friendly display name
@@ -19,3 +22,11 @@ docker_labels:
   radarr: "Radarr"
   sonarr: "Sonarr"
   tautulli: "Tautulli"
+
+# Custom URLs for Docker containers (optional)
+# Maps container name to the URL opened when the ↗ icon is clicked.
+# Leave empty {} to auto-build a URL from the first exposed host port.
+# Example:
+#   plex: "https://plex.example.com"
+#   jellyfin: "http://192.168.1.50:8096"
+docker_links: {}

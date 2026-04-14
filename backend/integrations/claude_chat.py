@@ -1,5 +1,6 @@
 """Claude AI chat integration — replaces OpenClaw."""
 
+import json
 import logging
 
 import anthropic
@@ -31,9 +32,10 @@ class ChatRequest(BaseModel):
 
 
 def _get_client():
+    """Return an AsyncAnthropic client, or None if unconfigured."""
     if not settings.CLAUDE_API_KEY:
         return None
-    return anthropic.Anthropic(api_key=settings.CLAUDE_API_KEY)
+    return anthropic.AsyncAnthropic(api_key=settings.CLAUDE_API_KEY)
 
 
 def _prepare_messages(messages: list[ChatMessage]):
@@ -48,6 +50,17 @@ def _prepare_messages(messages: list[ChatMessage]):
     return system, api_messages
 
 
+def _build_kwargs(system: str, messages: list) -> dict:
+    kwargs = {
+        "model": settings.CLAUDE_MODEL,
+        "max_tokens": 4096,
+        "messages": messages,
+    }
+    if system:
+        kwargs["system"] = system
+    return kwargs
+
+
 @router.get("/status")
 async def claude_status():
     """Check if Claude API is configured."""
@@ -59,22 +72,13 @@ async def claude_status():
 @router.post("/chat")
 async def claude_chat(request: ChatRequest):
     """Send a chat message to Claude and return the response."""
-    if not settings.CLAUDE_API_KEY:
+    client = _get_client()
+    if client is None:
         raise HTTPException(status_code=503, detail="Claude not configured")
 
     try:
-        client = _get_client()
         system, messages = _prepare_messages(request.messages)
-
-        kwargs = {
-            "model": settings.CLAUDE_MODEL,
-            "max_tokens": 4096,
-            "messages": messages,
-        }
-        if system:
-            kwargs["system"] = system
-
-        response = client.messages.create(**kwargs)
+        response = await client.messages.create(**_build_kwargs(system, messages))
         assistant_message = response.content[0].text
         return {"response": assistant_message}
 
@@ -84,7 +88,7 @@ async def claude_chat(request: ChatRequest):
     except anthropic.RateLimitError:
         logger.warning("Claude API rate limited")
         raise HTTPException(status_code=429, detail="Claude API rate limited")
-    except Exception as e:
+    except Exception:
         logger.exception("Claude chat failed")
         raise HTTPException(status_code=500, detail="Claude request failed")
 
@@ -92,34 +96,20 @@ async def claude_chat(request: ChatRequest):
 @router.post("/chat/stream")
 async def claude_chat_stream(request: ChatRequest):
     """Send a chat message to Claude with streaming response."""
-    if not settings.CLAUDE_API_KEY:
+    client = _get_client()
+    if client is None:
         raise HTTPException(status_code=503, detail="Claude not configured")
 
     async def stream_response():
         try:
-            client = _get_client()
             system, messages = _prepare_messages(request.messages)
-
-            kwargs = {
-                "model": settings.CLAUDE_MODEL,
-                "max_tokens": 4096,
-                "messages": messages,
-            }
-            if system:
-                kwargs["system"] = system
-
-            with client.messages.stream(**kwargs) as stream:
-                for text in stream.text_stream:
+            async with client.messages.stream(**_build_kwargs(system, messages)) as stream:
+                async for text in stream.text_stream:
                     # SSE format compatible with existing frontend
-                    import json
-                    chunk = {
-                        "choices": [{
-                            "delta": {"content": text}
-                        }]
-                    }
+                    chunk = {"choices": [{"delta": {"content": text}}]}
                     yield f"data: {json.dumps(chunk)}\n\n"
             yield "data: [DONE]\n\n"
-        except Exception as e:
+        except Exception:
             logger.exception("Claude stream failed")
             yield "data: {}\n\n"
 
