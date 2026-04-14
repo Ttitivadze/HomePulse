@@ -55,12 +55,13 @@ const App = {
 
     try {
       const data = await this.fetch('/api/dashboard');
-      this.renderProxmox(data.proxmox);
-      this.renderDocker(data.docker);
-      this.renderArr(data.radarr, data.sonarr, data.lidarr);
-      this.renderStreaming(data.streaming);
+      this.safeRender('proxmox-content', 'Proxmox', 'proxmox', () => this.renderProxmox(data.proxmox));
+      this.safeRender('docker-content', 'Docker', 'docker', () => this.renderDocker(data.docker));
+      this.safeRender('arr-content', 'Arr Suite', 'arr', () => this.renderArr(data.radarr, data.sonarr, data.lidarr));
+      this.safeRender('streaming-content', 'Streaming', 'streaming', () => this.renderStreaming(data.streaming));
       this.updateTimestamp(data.timestamp);
     } catch (e) {
+      console.error('Dashboard load failed:', e);
       // Fallback: load sections individually
       await Promise.allSettled([
         this.loadProxmox(),
@@ -93,6 +94,7 @@ const App = {
       const data = await this.fetch('/api/proxmox/status');
       this.renderProxmox(data);
     } catch (e) {
+      console.error('Proxmox error:', e);
       container.innerHTML = this.errorCard('Proxmox', e.message, 'proxmox');
     }
   },
@@ -103,6 +105,7 @@ const App = {
       const data = await this.fetch('/api/docker/containers');
       this.renderDocker(data);
     } catch (e) {
+      console.error('Docker error:', e);
       container.innerHTML = this.errorCard('Docker', e.message, 'docker');
     }
   },
@@ -121,6 +124,7 @@ const App = {
         lidarr.status === 'fulfilled' ? lidarr.value : null,
       );
     } catch (e) {
+      console.error('Arr error:', e);
       container.innerHTML = this.errorCard('Arr Suite', e.message, 'arr');
     }
   },
@@ -131,6 +135,7 @@ const App = {
       const data = await this.fetch('/api/arr/streaming');
       this.renderStreaming(data);
     } catch (e) {
+      console.error('Streaming error:', e);
       container.innerHTML = this.errorCard('Streaming', e.message, 'streaming');
     }
   },
@@ -167,12 +172,13 @@ const App = {
         continue;
       }
 
+      const nodes = Array.isArray(inst.nodes) ? inst.nodes : [];
       if (multiInstance) {
         html += `<div class="instance-group"><div class="instance-header">${esc(inst.name)} ${openBtn}</div>`;
-        html += inst.nodes.map(node => this.renderNode(node)).join('');
+        html += nodes.map(node => this.renderNode(node)).join('');
         html += `</div>`;
       } else {
-        html += openBtn + inst.nodes.map(node => this.renderNode(node)).join('');
+        html += openBtn + nodes.map(node => this.renderNode(node)).join('');
       }
     }
     container.innerHTML = html;
@@ -181,11 +187,13 @@ const App = {
   renderNode(node) {
     const esc = (s) => this.escapeHtml(String(s ?? ''));
     const memPercent = node.mem_total > 0 ? Math.round((node.mem_used / node.mem_total) * 100) : 0;
-    const vms = node.vms.map(vm => this.renderVmCard(vm, 'VM')).join('');
-    const cts = node.containers.map(ct => this.renderVmCard(ct, 'LXC')).join('');
-    const totalGuests = node.vms.length + node.containers.length;
-    const runningGuests = node.vms.filter(v => v.status === 'running').length +
-                          node.containers.filter(c => c.status === 'running').length;
+    const vmList = Array.isArray(node.vms) ? node.vms : [];
+    const ctList = Array.isArray(node.containers) ? node.containers : [];
+    const vms = vmList.map(vm => this.renderVmCard(vm, 'VM')).join('');
+    const cts = ctList.map(ct => this.renderVmCard(ct, 'LXC')).join('');
+    const totalGuests = vmList.length + ctList.length;
+    const runningGuests = vmList.filter(v => v.status === 'running').length +
+                          ctList.filter(c => c.status === 'running').length;
 
     return `
       <div class="node-card">
@@ -209,8 +217,8 @@ const App = {
             <div class="resource-bar"><div class="resource-bar-fill mem" style="width:${memPercent}%"></div></div>
           </div>
         </div>
-        ${node.vms.length ? `<div class="node-vms-title">Virtual Machines (${node.vms.length})</div><div class="card-grid">${vms}</div>` : ''}
-        ${node.containers.length ? `<div class="node-vms-title" style="margin-top:12px">LXC Containers (${node.containers.length})</div><div class="card-grid">${cts}</div>` : ''}
+        ${vmList.length ? `<div class="node-vms-title">Virtual Machines (${vmList.length})</div><div class="card-grid">${vms}</div>` : ''}
+        ${ctList.length ? `<div class="node-vms-title" style="margin-top:12px">LXC Containers (${ctList.length})</div><div class="card-grid">${cts}</div>` : ''}
       </div>`;
   },
 
@@ -292,7 +300,8 @@ const App = {
     const memPercent = c.mem_limit > 0 ? Math.round((c.mem_usage / c.mem_limit) * 100) : 0;
 
     // Build link from first mapped host port (validate numeric)
-    const rawPort = c.ports.length ? c.ports[0].split('->')[0] : null;
+    const ports = Array.isArray(c.ports) ? c.ports : [];
+    const rawPort = ports.length ? ports[0].split('->')[0] : null;
     const firstHostPort = rawPort && /^\d+$/.test(rawPort) ? rawPort : null;
     const baseUrl = hostUrl || ('http://' + window.location.hostname);
     const linkUrl = firstHostPort ? `${baseUrl}:${firstHostPort}` : null;
@@ -411,15 +420,16 @@ const App = {
       return;
     }
 
-    badge.textContent = data.stream_count;
+    badge.textContent = data.stream_count || 0;
+    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
 
-    if (data.sessions.length === 0) {
+    if (sessions.length === 0) {
       container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#9654;</div>No active streams</div>';
       return;
     }
 
     const esc = (s) => this.escapeHtml(String(s ?? ''));
-    container.innerHTML = data.sessions.map(s => `
+    container.innerHTML = sessions.map(s => `
       <div class="stream-card">
         <div class="stream-indicator ${s.state === 'paused' ? 'paused' : ''}"></div>
         <div class="stream-info">
@@ -650,6 +660,24 @@ const App = {
       <span style="font-size:12px;margin-top:4px;display:inline-block;color:var(--text-muted)">${this.escapeHtml(message)}</span>
       ${section ? `<br><button class="retry-btn" data-section="${this.escapeHtml(section)}">Retry</button>` : ''}
     </div>`;
+  },
+
+  renderErrorCard(service, error, section) {
+    console.error(`${service} render error:`, error);
+    return `<div class="not-configured error-card">
+      <strong>${this.escapeHtml(service)}</strong> received data but failed to render<br>
+      <span style="font-size:12px;margin-top:4px;display:inline-block;color:var(--text-muted)">${this.escapeHtml(error.message || 'Unknown render error')}</span>
+      ${section ? `<br><button class="retry-btn" data-section="${this.escapeHtml(section)}">Retry</button>` : ''}
+    </div>`;
+  },
+
+  safeRender(containerId, service, section, renderFn) {
+    const container = document.getElementById(containerId);
+    try {
+      renderFn(container);
+    } catch (e) {
+      container.innerHTML = this.renderErrorCard(service, e, section);
+    }
   },
 };
 

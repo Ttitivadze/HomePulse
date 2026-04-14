@@ -6,6 +6,11 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v1.2.2
+- **Bugfix**: Frontend no longer crashes on missing/incomplete arrays in API responses — all `.map()`, `.filter()`, `.length` calls now use safe defaults
+- **UX**: Render exceptions now show "received data but failed to render" instead of the misleading "Failed to connect" — backend and frontend errors are clearly distinguished
+- **Logging**: Render errors logged to browser console with full stack traces for debugging
+
 ### v1.2.1
 - **Bugfix**: Docker socket permission detection — shows "Docker socket mounted but not accessible" instead of "not configured" when the container user lacks socket group permissions
 - **Config**: New `DOCKER_GID` env var passed via `group_add` in docker-compose.yml so the non-root container can access the host Docker socket
@@ -233,6 +238,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `1.2.2` — Defensive frontend rendering, distinguish render errors from API failures
 - `1.2.1` — Fix Docker socket permission detection, add DOCKER_GID config
 - `1.2.0` — Multi-instance Proxmox/Docker, UI improvements, download queue filtering
 - `1.1.2` — Performance optimizations, mobile UX, code cleanup
