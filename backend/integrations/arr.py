@@ -23,28 +23,55 @@ async def _get_client() -> httpx.AsyncClient:
     return _client
 
 
-async def _fetch(base_url: str, api_key: str, endpoint: str) -> dict | list | None:
-    if not base_url or not api_key:
+async def _api_get(
+    url: str,
+    *,
+    api_key: str | None = None,
+    headers: dict | None = None,
+    params: dict | None = None,
+    key_header: str = "X-Api-Key",
+    response_path: tuple[str, ...] = (),
+):
+    """Shared GET helper for arr / Tautulli / anything using the module httpx client.
+
+    - When ``api_key`` is given and ``params`` doesn't already carry it, the key
+      goes in the configured ``key_header`` header (Radarr/Sonarr/Lidarr style).
+    - ``response_path`` walks into the parsed JSON (e.g. Tautulli returns
+      ``{"response": {"data": ...}}`` and wants ``("response", "data")``).
+    - Returns ``None`` if the url is empty — keeps callers terse.
+    """
+    if not url:
         return None
     client = await _get_client()
-    resp = await client.get(
-        f"{base_url}/api/v3/{endpoint}",
-        headers={"X-Api-Key": api_key},
-    )
+    req_headers = dict(headers or {})
+    if api_key and not (params and "apikey" in params):
+        req_headers[key_header] = api_key
+    resp = await client.get(url, headers=req_headers, params=params)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    for key in response_path:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+async def _fetch(base_url: str, api_key: str, endpoint: str) -> dict | list | None:
+    """Radarr / Sonarr / Lidarr API v3 helper."""
+    if not base_url or not api_key:
+        return None
+    return await _api_get(f"{base_url}/api/v3/{endpoint}", api_key=api_key)
 
 
 async def _fetch_tautulli(cmd: str) -> dict | None:
+    """Tautulli API v2 helper — key goes in the query string, not a header."""
     if not settings.TAUTULLI_URL or not settings.TAUTULLI_API_KEY:
         return None
-    client = await _get_client()
-    resp = await client.get(
+    return await _api_get(
         f"{settings.TAUTULLI_URL}/api/v2",
         params={"apikey": settings.TAUTULLI_API_KEY, "cmd": cmd},
+        response_path=("response", "data"),
     )
-    resp.raise_for_status()
-    return resp.json().get("response", {}).get("data")
 
 
 def _build_queue_items(queue_data) -> list:
