@@ -95,6 +95,14 @@ class Settings:
         self.NPM_URL: str = _get("NPM_URL").rstrip("/")
         self.NPM_API_TOKEN: str = _get("NPM_API_TOKEN")
 
+        # NAS / external storage mounts. Comma-separated list of
+        # filesystem paths visible inside the HomePulse container that
+        # should be shown alongside Proxmox storages in the
+        # Infrastructure widget. Each path is read via os.statvfs so
+        # accuracy matches `df`. Empty by default.
+        raw_nas = _get("NAS_MOUNTS", "")
+        self.NAS_MOUNTS: list[str] = [p.strip() for p in raw_nas.split(",") if p.strip()]
+
         # Notifications
         self.TELEGRAM_BOT_TOKEN: str = _get("TELEGRAM_BOT_TOKEN")
         self.TELEGRAM_CHAT_ID: str = _get("TELEGRAM_CHAT_ID")

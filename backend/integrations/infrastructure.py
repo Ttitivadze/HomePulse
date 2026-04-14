@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 
 import httpx
@@ -69,6 +70,52 @@ async def _fetch_storage_data() -> list:
     except Exception:
         logger.exception("Storage fetch failed")
         return []
+
+
+def _statvfs_usage(path: str) -> dict | None:
+    """Return usage info for a locally mounted path via os.statvfs.
+
+    Returns None if the path doesn't exist or isn't readable. Blocking
+    call — must be wrapped in asyncio.to_thread by the caller.
+    """
+    if not os.path.isdir(path):
+        return None
+    try:
+        st = os.statvfs(path)
+    except OSError as e:
+        logger.debug("statvfs failed for %s: %s", path, e)
+        return None
+
+    # f_frsize = fragment size; f_blocks = total; f_bavail = avail to non-root.
+    # We intentionally use f_bavail (not f_bfree) so reports match `df -h`
+    # output that users see on the host.
+    block = st.f_frsize or st.f_bsize
+    total = block * st.f_blocks
+    avail = block * st.f_bavail
+    used = total - avail
+    percent = round((used / total) * 100, 1) if total else 0
+
+    return {
+        "name": os.path.basename(path.rstrip("/")) or path,
+        "type": "mount",
+        "total": total,
+        "used": used,
+        "percent": percent,
+        "path": path,
+    }
+
+
+async def _fetch_nas_mounts() -> list:
+    """Collect usage for each configured NAS / local mount."""
+    mounts = settings.NAS_MOUNTS
+    if not mounts:
+        return []
+
+    results = await asyncio.gather(
+        *(asyncio.to_thread(_statvfs_usage, p) for p in mounts),
+        return_exceptions=True,
+    )
+    return [r for r in results if isinstance(r, dict)]
 
 
 async def _fetch_backup_data() -> list:
@@ -190,16 +237,22 @@ async def fetch_infrastructure_data() -> dict:
     if cached is not None:
         return cached
 
-    storage, backups, ssl_certs = await asyncio.gather(
+    storage, nas, backups, ssl_certs = await asyncio.gather(
         _fetch_storage_data(),
+        _fetch_nas_mounts(),
         _fetch_backup_data(),
         _fetch_ssl_data(),
         return_exceptions=True,
     )
 
+    storage_list = storage if isinstance(storage, list) else []
+    nas_list = nas if isinstance(nas, list) else []
+
     data = {
         "configured": True,
-        "storage": storage if isinstance(storage, list) else [],
+        # NAS mounts appear first so operators see the most concrete
+        # "is my backup drive full?" signal at a glance.
+        "storage": nas_list + storage_list,
         "backups": backups if isinstance(backups, list) else [],
         "ssl_certs": ssl_certs if isinstance(ssl_certs, list) else [],
     }
