@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from backend.config import settings
 from backend import cache, database as db
 from backend.cache import TTL
+from backend.integrations._status import ok, failure, unconfigured
 from backend.integrations.docker_updates import annotate_update_available
 
 logger = logging.getLogger("homepulse.docker")
@@ -111,10 +112,19 @@ async def _fetch_containers(client, host_url: str) -> dict:
             for info in container_info:
                 info.setdefault("update_available", None)
 
-        return {"configured": True, "containers": container_info, "host_url": host_url, "docker_links": settings.docker_links}
+        return ok(
+            containers=container_info,
+            host_url=host_url,
+            docker_links=settings.docker_links,
+        )
     except Exception:
         logger.exception("Docker fetch failed")
-        return {"configured": True, "containers": [], "host_url": host_url, "docker_links": settings.docker_links, "error": "Docker request failed"}
+        return failure(
+            "Docker request failed",
+            containers=[],
+            host_url=host_url,
+            docker_links=settings.docker_links,
+        )
     finally:
         await asyncio.to_thread(client.close)
 
@@ -127,8 +137,13 @@ async def fetch_docker_data() -> dict:
         access_err = _check_socket_access()
         if access_err:
             logger.warning(access_err)
-            return {"configured": True, "containers": [], "host_url": settings.DOCKER_URL, "docker_links": settings.docker_links, "error": access_err}
-        return {"configured": False, "containers": []}
+            return failure(
+                access_err,
+                containers=[],
+                host_url=settings.DOCKER_URL,
+                docker_links=settings.docker_links,
+            )
+        return unconfigured(containers=[])
 
     cached = cache.get("docker:default", ttl=TTL.DOCKER_STATS)
     if cached is not None:
@@ -151,11 +166,16 @@ async def _fetch_additional_instance(instance_id: int, name: str, config: dict) 
     tls_verify = config.get("tls_verify", False)
 
     if not host:
-        return {"name": name, "configured": False, "containers": []}
+        return unconfigured(name=name, containers=[])
 
     client = await asyncio.to_thread(_get_remote_client, host, tls_verify)
     if not client:
-        return {"name": name, "configured": True, "containers": [], "host_url": host_url, "error": f"Cannot connect to {name}"}
+        return failure(
+            f"Cannot connect to {name}",
+            name=name,
+            containers=[],
+            host_url=host_url,
+        )
 
     data = await _fetch_containers(client, host_url)
     data["name"] = name
@@ -195,9 +215,9 @@ async def fetch_all_docker_data() -> dict:
                 logger.error("Docker instance '%s' (id=%d) failed: %s", rows[i]["instance_name"], rows[i]["id"], r)
 
     if not instances:
-        return {"configured": False, "instances": []}
+        return unconfigured(instances=[])
 
-    return {"configured": True, "instances": instances}
+    return ok(instances=instances)
 
 
 @router.get("/containers")
@@ -206,7 +226,9 @@ async def get_containers():
     data = await fetch_all_docker_data()
     if not data.get("configured"):
         return data
-    errors = [inst for inst in data["instances"] if "error" in inst]
+    # Truthy check — with the shared error envelope, every instance has
+    # an `error` key (None on success, str on failure).
+    errors = [inst for inst in data["instances"] if inst.get("error")]
     if len(errors) == len(data["instances"]):
         raise HTTPException(status_code=503, detail=errors[0]["error"])
     return data

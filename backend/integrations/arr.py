@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache
+from backend.integrations._status import ok, failure, unconfigured
 
 logger = logging.getLogger("homepulse.arr")
 
@@ -73,7 +74,7 @@ def _build_queue_items(queue_data) -> list:
 
 async def fetch_radarr_data() -> dict:
     if not settings.RADARR_URL:
-        return {"configured": False}
+        return unconfigured()
 
     cached = cache.get("radarr")
     if cached is not None:
@@ -92,30 +93,29 @@ async def fetch_radarr_data() -> dict:
         )
         unmonitored_missing = total - downloaded - monitored_missing
 
-        data = {
-            "configured": True,
-            "total": total,
-            "downloaded": downloaded,
-            "missing": total - downloaded,
-            "requested": monitored_missing,
-            "unmonitored": unmonitored_missing,
-            "queue": _build_queue_items(queue),
-        }
+        data = ok(
+            total=total,
+            downloaded=downloaded,
+            missing=total - downloaded,
+            requested=monitored_missing,
+            unmonitored=unmonitored_missing,
+            queue=_build_queue_items(queue),
+        )
         cache.put("radarr", data)
         return data
     except httpx.ConnectError:
         logger.warning("Cannot connect to Radarr at %s", settings.RADARR_URL)
-        return {"configured": True, "error": "Cannot connect to Radarr"}
-    except Exception as e:
+        return failure("Cannot connect to Radarr")
+    except Exception:
         logger.exception("Radarr fetch failed")
-        return {"configured": True, "error": "Radarr request failed"}
+        return failure("Radarr request failed")
 
 
 @router.get("/radarr")
 async def get_radarr():
     """Get Radarr movie stats and download queue."""
     data = await fetch_radarr_data()
-    if "error" in data:
+    if data.get("error"):
         raise HTTPException(status_code=503, detail=data["error"])
     return data
 
@@ -125,7 +125,7 @@ async def get_radarr():
 
 async def fetch_sonarr_data() -> dict:
     if not settings.SONARR_URL:
-        return {"configured": False}
+        return unconfigured()
 
     cached = cache.get("sonarr")
     if cached is not None:
@@ -145,29 +145,28 @@ async def fetch_sonarr_data() -> dict:
             for s in (series or [])
         )
 
-        data = {
-            "configured": True,
-            "total_shows": total_shows,
-            "monitored_shows": monitored_shows,
-            "total_episodes": total_episodes,
-            "missing_episodes": missing_episodes,
-            "queue": _build_queue_items(queue),
-        }
+        data = ok(
+            total_shows=total_shows,
+            monitored_shows=monitored_shows,
+            total_episodes=total_episodes,
+            missing_episodes=missing_episodes,
+            queue=_build_queue_items(queue),
+        )
         cache.put("sonarr", data)
         return data
     except httpx.ConnectError:
         logger.warning("Cannot connect to Sonarr at %s", settings.SONARR_URL)
-        return {"configured": True, "error": "Cannot connect to Sonarr"}
-    except Exception as e:
+        return failure("Cannot connect to Sonarr")
+    except Exception:
         logger.exception("Sonarr fetch failed")
-        return {"configured": True, "error": "Sonarr request failed"}
+        return failure("Sonarr request failed")
 
 
 @router.get("/sonarr")
 async def get_sonarr():
     """Get Sonarr TV show stats and download queue."""
     data = await fetch_sonarr_data()
-    if "error" in data:
+    if data.get("error"):
         raise HTTPException(status_code=503, detail=data["error"])
     return data
 
@@ -177,7 +176,7 @@ async def get_sonarr():
 
 async def fetch_lidarr_data() -> dict:
     if not settings.LIDARR_URL:
-        return {"configured": False}
+        return unconfigured()
 
     cached = cache.get("lidarr")
     if cached is not None:
@@ -193,28 +192,27 @@ async def fetch_lidarr_data() -> dict:
         monitored_artists = sum(1 for a in (artists or []) if a.get("monitored"))
         total_albums = sum(a.get("albumCount", 0) for a in (artists or []))
 
-        data = {
-            "configured": True,
-            "total_artists": total_artists,
-            "monitored_artists": monitored_artists,
-            "total_albums": total_albums,
-            "queue": _build_queue_items(queue),
-        }
+        data = ok(
+            total_artists=total_artists,
+            monitored_artists=monitored_artists,
+            total_albums=total_albums,
+            queue=_build_queue_items(queue),
+        )
         cache.put("lidarr", data)
         return data
     except httpx.ConnectError:
         logger.warning("Cannot connect to Lidarr at %s", settings.LIDARR_URL)
-        return {"configured": True, "error": "Cannot connect to Lidarr"}
-    except Exception as e:
+        return failure("Cannot connect to Lidarr")
+    except Exception:
         logger.exception("Lidarr fetch failed")
-        return {"configured": True, "error": "Lidarr request failed"}
+        return failure("Lidarr request failed")
 
 
 @router.get("/lidarr")
 async def get_lidarr():
     """Get Lidarr music stats and download queue."""
     data = await fetch_lidarr_data()
-    if "error" in data:
+    if data.get("error"):
         raise HTTPException(status_code=503, detail=data["error"])
     return data
 
@@ -403,7 +401,7 @@ async def fetch_streaming_data() -> dict:
     has_tautulli = bool(settings.TAUTULLI_URL and settings.TAUTULLI_API_KEY)
 
     if not has_jellyfin and not has_plex and not has_tautulli:
-        return {"configured": False}
+        return unconfigured()
 
     cached = cache.get("streaming")
     if cached is not None:
@@ -424,9 +422,9 @@ async def fetch_streaming_data() -> dict:
 
     try:
         results = await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e:
+    except Exception:
         logger.exception("Streaming fetch failed")
-        return {"configured": True, "error": "Streaming request failed"}
+        return failure("Streaming request failed")
 
     sessions = []
     errors = []
@@ -438,14 +436,13 @@ async def fetch_streaming_data() -> dict:
             sessions.extend(res)
 
     if not sessions and errors:
-        return {"configured": True, "error": f"Cannot connect to {', '.join(errors)}"}
+        return failure(f"Cannot connect to {', '.join(errors)}")
 
-    result = {
-        "configured": True,
-        "stream_count": len(sessions),
-        "sessions": sessions,
-        "sources": labels,
-    }
+    result = ok(
+        stream_count=len(sessions),
+        sessions=sessions,
+        sources=labels,
+    )
     cache.put("streaming", result)
     return result
 
@@ -454,6 +451,6 @@ async def fetch_streaming_data() -> dict:
 async def get_streaming():
     """Get current streaming activity from Jellyfin, Plex, and/or Tautulli."""
     data = await fetch_streaming_data()
-    if "error" in data:
+    if data.get("error"):
         raise HTTPException(status_code=503, detail=data["error"])
     return data

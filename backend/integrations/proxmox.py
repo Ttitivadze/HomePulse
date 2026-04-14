@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache, database as db
+from backend.integrations._status import ok, failure, unconfigured
 
 logger = logging.getLogger("homepulse.proxmox")
 
@@ -126,13 +127,13 @@ async def _fetch_instance(client: httpx.AsyncClient, host_url: str) -> dict:
         return_exceptions=True,
     )
     valid_nodes = [r for r in results if isinstance(r, dict)]
-    return {"configured": True, "nodes": valid_nodes, "url": host_url}
+    return ok(nodes=valid_nodes, url=host_url)
 
 
 async def fetch_proxmox_data() -> dict:
     """Fetch data from the default (env-based) Proxmox instance. Returns a dict; never raises."""
     if not settings.PROXMOX_HOST:
-        return {"configured": False, "nodes": []}
+        return unconfigured(nodes=[])
 
     cached = cache.get("proxmox:default")
     if cached is not None:
@@ -146,13 +147,13 @@ async def fetch_proxmox_data() -> dict:
 
     except httpx.ConnectError:
         logger.warning("Cannot connect to Proxmox at %s", settings.PROXMOX_HOST)
-        return {"configured": True, "nodes": [], "error": "Cannot connect to Proxmox host"}
+        return failure("Cannot connect to Proxmox host", nodes=[])
     except httpx.HTTPStatusError as e:
         logger.warning("Proxmox API error: %s", e.response.status_code)
-        return {"configured": True, "nodes": [], "error": "Proxmox API error"}
+        return failure("Proxmox API error", nodes=[])
     except Exception:
         logger.exception("Proxmox fetch failed")
-        return {"configured": True, "nodes": [], "error": "Proxmox request failed"}
+        return failure("Proxmox request failed", nodes=[])
 
 
 async def _fetch_additional_instance(instance_id: int, name: str, config: dict) -> dict:
@@ -164,7 +165,7 @@ async def _fetch_additional_instance(instance_id: int, name: str, config: dict) 
 
     host = config.get("host", "").rstrip("/")
     if not host:
-        return {"name": name, "configured": False, "nodes": []}
+        return unconfigured(name=name, nodes=[])
 
     client = _make_client(config)
     try:
@@ -174,13 +175,13 @@ async def _fetch_additional_instance(instance_id: int, name: str, config: dict) 
         return data
     except httpx.ConnectError:
         logger.warning("Cannot connect to Proxmox instance '%s' at %s", name, host)
-        return {"name": name, "configured": True, "nodes": [], "url": host, "error": f"Cannot connect to {name}"}
+        return failure(f"Cannot connect to {name}", name=name, nodes=[], url=host)
     except httpx.HTTPStatusError as e:
         logger.warning("Proxmox instance '%s' API error: %s", name, e.response.status_code)
-        return {"name": name, "configured": True, "nodes": [], "url": host, "error": "Proxmox API error"}
+        return failure("Proxmox API error", name=name, nodes=[], url=host)
     except Exception:
         logger.exception("Proxmox instance '%s' fetch failed", name)
-        return {"name": name, "configured": True, "nodes": [], "url": host, "error": "Proxmox request failed"}
+        return failure("Proxmox request failed", name=name, nodes=[], url=host)
     finally:
         await client.aclose()
 
@@ -217,9 +218,9 @@ async def fetch_all_proxmox_data() -> dict:
                 logger.error("Proxmox instance '%s' (id=%d) failed: %s", rows[i]["instance_name"], rows[i]["id"], r)
 
     if not instances:
-        return {"configured": False, "instances": []}
+        return unconfigured(instances=[])
 
-    return {"configured": True, "instances": instances}
+    return ok(instances=instances)
 
 
 @router.get("/status")
@@ -228,8 +229,9 @@ async def get_proxmox_status():
     data = await fetch_all_proxmox_data()
     if not data.get("configured"):
         return data
-    # Check if all instances have errors
-    errors = [inst for inst in data["instances"] if "error" in inst]
+    # Truthy check — with the shared error envelope every instance has
+    # an `error` key (None on success, str on failure).
+    errors = [inst for inst in data["instances"] if inst.get("error")]
     if len(errors) == len(data["instances"]):
         raise HTTPException(status_code=503, detail=errors[0]["error"])
     return data
