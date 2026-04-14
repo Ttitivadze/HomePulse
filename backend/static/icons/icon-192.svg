@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="HomePulse">
+  <rect width="192" height="192" rx="36" fill="#0f1117"/>
+  <g transform="translate(96 96)">
+    <!-- Pulse heart: a stylised EKG trace inside a circle accent -->
+    <circle r="68" fill="none" stroke="#6366f1" stroke-width="6" opacity="0.35"/>
+    <path d="M-60 0 H-28 L-16 -26 L0 34 L16 -18 L28 6 H60"
+          fill="none" stroke="#6366f1" stroke-width="8"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
