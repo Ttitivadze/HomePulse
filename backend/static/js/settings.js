@@ -187,7 +187,9 @@ const Settings = {
       document.getElementById('auth-password').value = '';
 
       if (Auth.isAdmin()) {
-        this.showPanel();
+        // Close the login overlay and reopen straight into the settings panel
+        this.close();
+        this.open();
       } else {
         errEl.textContent = 'Admin access required for settings';
         errEl.classList.remove('hidden');
