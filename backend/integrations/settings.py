@@ -321,12 +321,13 @@ async def update_instance(
         )
 
     if req.config is not None:
-        # Merge: preserve masked secret values from the existing config
+        # Start from existing config, overlay user changes, preserve masked secrets
         existing_config = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
-        merged = dict(req.config)
-        for key in _INSTANCE_SECRET_KEYS:
-            if merged.get(key) == "••••••••":
-                merged[key] = existing_config.get(key, "")
+        merged = dict(existing_config)
+        for key, value in req.config.items():
+            if key in _INSTANCE_SECRET_KEYS and value == "••••••••":
+                continue  # Preserve existing secret
+            merged[key] = value
         await db.execute(
             "UPDATE service_instances SET config = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (json.dumps(merged), instance_id),

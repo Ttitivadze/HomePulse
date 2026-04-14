@@ -61,7 +61,11 @@ async def _fetch_node_guests(
     )
 
     vms = []
-    if not isinstance(vms_resp, Exception) and vms_resp.status_code == 200:
+    if isinstance(vms_resp, Exception):
+        logger.warning("Failed to fetch VMs for node %s: %s", node_name, vms_resp)
+    elif vms_resp.status_code != 200:
+        logger.warning("Proxmox VMs for node %s returned HTTP %d", node_name, vms_resp.status_code)
+    else:
         for vm in vms_resp.json().get("data", []):
             vms.append(
                 {
@@ -76,7 +80,11 @@ async def _fetch_node_guests(
             )
 
     containers = []
-    if not isinstance(lxc_resp, Exception) and lxc_resp.status_code == 200:
+    if isinstance(lxc_resp, Exception):
+        logger.warning("Failed to fetch LXC for node %s: %s", node_name, lxc_resp)
+    elif lxc_resp.status_code != 200:
+        logger.warning("Proxmox LXC for node %s returned HTTP %d", node_name, lxc_resp.status_code)
+    else:
         for ct in lxc_resp.json().get("data", []):
             containers.append(
                 {
@@ -202,11 +210,11 @@ async def fetch_all_proxmox_data() -> dict:
             config = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
             tasks.append(_fetch_additional_instance(row["id"], row["instance_name"], config))
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in results:
+        for i, r in enumerate(results):
             if isinstance(r, dict):
                 instances.append(r)
             elif isinstance(r, Exception):
-                logger.error("Proxmox additional instance failed: %s", r)
+                logger.error("Proxmox instance '%s' (id=%d) failed: %s", rows[i]["instance_name"], rows[i]["id"], r)
 
     if not instances:
         return {"configured": False, "instances": []}

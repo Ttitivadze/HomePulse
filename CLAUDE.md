@@ -75,7 +75,8 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── test_openclaw.py     # OpenClaw endpoint tests
 │   ├── test_cache.py        # TTL cache unit tests
 │   ├── test_auth.py         # Auth system tests (setup, login, JWT, status)
-│   └── test_settings.py     # Settings tests (UI, users, services, validation)
+│   ├── test_settings.py     # Settings tests (UI, users, services, validation)
+│   └── test_instances.py    # Service instance CRUD tests (multi-instance)
 ├── VERSION                  # Semantic version (1.2.0)
 ├── LICENSE                  # MIT License
 ├── .env.example             # All environment variables with descriptions
@@ -158,6 +159,11 @@ pytest tests/ -v
 | PUT | `/api/settings/users/{id}/admin` | Toggle admin status (admin) |
 | PUT | `/api/settings/users/{id}/password` | Reset a user's password (admin) |
 | DELETE | `/api/settings/users/{id}` | Delete a user (admin) |
+| GET | `/api/settings/instances` | List additional service instances (admin) |
+| POST | `/api/settings/instances` | Create a new service instance (admin) |
+| PUT | `/api/settings/instances/{id}` | Update a service instance (admin) |
+| DELETE | `/api/settings/instances/{id}` | Delete a service instance (admin) |
+| POST | `/api/settings/instances/{id}/test` | Test instance connectivity (admin) |
 
 The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individual endpoints are called for per-section retries.
 
@@ -188,6 +194,7 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **Error handling**: Use `fastapi.HTTPException` for individual API errors; the `/api/dashboard` endpoint wraps exceptions per-section. Error messages sent to clients are generic (no internal paths or stack traces); details are logged server-side.
 - **Security headers**: `SecurityHeadersMiddleware` adds `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy` to all responses.
 - **Logging**: All modules use `logging.getLogger("homepulse.<module>")`. Errors and connection failures are logged so `docker logs` is useful for debugging.
+- **Multi-instance support**: Proxmox and Docker support multiple instances. The "Default" instance is configured via `.env`/settings overrides. Additional instances are stored in the `service_instances` table (JSON config blobs) and managed via `/api/settings/instances` endpoints. `fetch_all_proxmox_data()` and `fetch_all_docker_data()` aggregate all instances concurrently. Each instance is cached separately; errors in one instance don't block others.
 
 ### Frontend
 
@@ -293,6 +300,10 @@ These are deliberate choices made during development. Don't revert without discu
 - **Docker stats concurrency is already correct**: `docker_int.py` uses `asyncio.gather` with `asyncio.to_thread` per container — they run in parallel, not sequentially. No need to refactor.
 - **Chat streaming uses a fast-path render**: During streaming, only the last message's `textContent` is updated (no innerHTML rebuild). Full rebuild happens only when a new message is added.
 - **SQLite uses a persistent connection**: `database.py` reuses a single connection with `check_same_thread=False`. The async `_lock` protects writes; reads are lock-free (safe under WAL mode).
+- **Multi-instance is DB-only (not .env)**: Additional Proxmox/Docker instances are managed entirely via the web UI, stored in `service_instances` table. This avoids cluttering `.env` with numbered vars. The default instance still comes from `.env` for backward compatibility.
+- **Instance secrets are masked and preserved on update**: `_mask_instance_config()` masks `token_value` in GET responses. On PUT, the merge logic starts from the existing config and overlays user changes, skipping masked values to preserve the original secret.
+- **Short-lived clients for additional instances**: Additional Proxmox instances use temporary `httpx.AsyncClient` per fetch (closed after use). Docker instances close via `asyncio.to_thread(client.close)`. Only the default Proxmox instance uses a persistent module-level client.
+- **DOCKER_URL is distinct from the Docker socket**: `DOCKER_URL` provides the base URL for building clickable container links in the UI (e.g., `http://192.168.1.50`). It has nothing to do with the Docker API connection, which uses the mounted socket.
 
 ## Known Deferred Items
 

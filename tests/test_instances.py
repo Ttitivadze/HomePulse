@@ -180,6 +180,107 @@ async def test_instance_secrets_masked(admin_token, async_client):
 
 
 @pytest.mark.asyncio
+async def test_update_instance_preserves_secrets(admin_token, async_client):
+    """Updating with masked secret values should preserve the original secret."""
+    # Create with a real secret
+    create_resp = await async_client.post(
+        "/api/settings/instances",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "service_type": "proxmox",
+            "instance_name": "Secret PVE",
+            "config": {"host": "https://10.0.0.1:8006", "token_value": "real-secret-123"},
+        },
+    )
+    instance_id = create_resp.json()["id"]
+
+    # Get masked config
+    list_resp = await async_client.get(
+        "/api/settings/instances",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    masked_config = list_resp.json()[0]["config"]
+    assert masked_config["token_value"] == "••••••••"
+
+    # Update with masked value (simulating user changing only the name)
+    await async_client.put(
+        f"/api/settings/instances/{instance_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"instance_name": "Updated PVE", "config": masked_config},
+    )
+
+    # Secret should be preserved in DB (verify via test endpoint behavior)
+    list_resp2 = await async_client.get(
+        "/api/settings/instances",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    inst = list_resp2.json()[0]
+    assert inst["instance_name"] == "Updated PVE"
+    assert inst["config"]["token_value"] == "••••••••"  # Still masked = still has value
+    assert inst["config"]["host"] == "https://10.0.0.1:8006"  # Preserved
+
+
+@pytest.mark.asyncio
+async def test_update_instance_config_only(admin_token, async_client):
+    """Updating config without changing name should work."""
+    create_resp = await async_client.post(
+        "/api/settings/instances",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "service_type": "proxmox",
+            "instance_name": "Config Test",
+            "config": {"host": "https://10.0.0.1:8006"},
+        },
+    )
+    instance_id = create_resp.json()["id"]
+
+    resp = await async_client.put(
+        f"/api/settings/instances/{instance_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"config": {"host": "https://10.0.0.2:8006"}},
+    )
+    assert resp.status_code == 200
+
+    # Verify config was updated
+    list_resp = await async_client.get(
+        "/api/settings/instances",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert list_resp.json()[0]["config"]["host"] == "https://10.0.0.2:8006"
+
+
+@pytest.mark.asyncio
+async def test_test_instance_connection(admin_token, async_client):
+    """Test connectivity endpoint should return a status structure."""
+    create_resp = await async_client.post(
+        "/api/settings/instances",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "service_type": "docker",
+            "instance_name": "Test Docker",
+            "config": {"host": "http://localhost:99999"},
+        },
+    )
+    instance_id = create_resp.json()["id"]
+
+    resp = await async_client.post(
+        f"/api/settings/instances/{instance_id}/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    assert "status" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_test_instance_not_found(admin_token, async_client):
+    resp = await async_client.post(
+        "/api/settings/instances/99999/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_instances_require_admin(init_db, async_client):
     resp = await async_client.get("/api/settings/instances")
     assert resp.status_code in (401, 403)

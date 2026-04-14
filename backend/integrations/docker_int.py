@@ -80,7 +80,7 @@ async def _fetch_containers(client, host_url: str) -> dict:
         logger.exception("Docker fetch failed")
         return {"configured": True, "containers": [], "host_url": host_url, "error": "Docker request failed"}
     finally:
-        client.close()
+        await asyncio.to_thread(client.close)
 
 
 async def fetch_docker_data() -> dict:
@@ -141,11 +141,11 @@ async def fetch_all_docker_data() -> dict:
             config = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
             tasks.append(_fetch_additional_instance(row["id"], row["instance_name"], config))
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in results:
+        for i, r in enumerate(results):
             if isinstance(r, dict):
                 instances.append(r)
             elif isinstance(r, Exception):
-                logger.error("Docker additional instance failed: %s", r)
+                logger.error("Docker instance '%s' (id=%d) failed: %s", rows[i]["instance_name"], rows[i]["id"], r)
 
     if not instances:
         return {"configured": False, "instances": []}
@@ -161,7 +161,7 @@ async def get_containers():
         return data
     errors = [inst for inst in data["instances"] if "error" in inst]
     if len(errors) == len(data["instances"]):
-        raise HTTPException(status_code=500, detail=errors[0]["error"])
+        raise HTTPException(status_code=503, detail=errors[0]["error"])
     return data
 
 

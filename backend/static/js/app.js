@@ -291,8 +291,9 @@ const App = {
     const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
     const memPercent = c.mem_limit > 0 ? Math.round((c.mem_usage / c.mem_limit) * 100) : 0;
 
-    // Build link from first mapped host port
-    const firstHostPort = c.ports.length ? c.ports[0].split('->')[0] : null;
+    // Build link from first mapped host port (validate numeric)
+    const rawPort = c.ports.length ? c.ports[0].split('->')[0] : null;
+    const firstHostPort = rawPort && /^\d+$/.test(rawPort) ? rawPort : null;
     const baseUrl = hostUrl || ('http://' + window.location.hostname);
     const linkUrl = firstHostPort ? `${baseUrl}:${firstHostPort}` : null;
     const linkHtml = linkUrl

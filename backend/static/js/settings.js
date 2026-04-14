@@ -34,6 +34,14 @@ const Settings = {
     document.getElementById('settings-overlay').addEventListener('click', (e) => {
       if (e.target.id === 'settings-overlay') this.close();
     });
+
+    // Delegated click handlers for dynamically rendered buttons
+    document.getElementById('settings-overlay').addEventListener('click', (e) => {
+      const delInst = e.target.closest('[data-delete-instance]');
+      if (delInst) { this.deleteInstance(parseInt(delInst.dataset.deleteInstance, 10)); return; }
+      const delUser = e.target.closest('[data-delete-user]');
+      if (delUser) { this.deleteUser(parseInt(delUser.dataset.deleteUser, 10)); return; }
+    });
   },
 
   async checkSetupStatus() {
@@ -390,7 +398,7 @@ const Settings = {
           <div class="instance-card-actions">
             <button class="instance-action-btn" onclick="Settings.saveInstance(${inst.id})" title="Save">Save</button>
             <button class="instance-action-btn" onclick="Settings.testInstance(${inst.id})" title="Test">Test</button>
-            <button class="instance-action-btn danger" onclick="Settings.deleteInstance(${inst.id}, '${escAttr(inst.instance_name)}')" title="Delete">Delete</button>
+            <button class="instance-action-btn danger" data-delete-instance="${inst.id}" title="Delete">Delete</button>
           </div>
         </div>
         ${fieldsHtml}
@@ -485,7 +493,9 @@ const Settings = {
     }
   },
 
-  async deleteInstance(instanceId, name) {
+  async deleteInstance(instanceId) {
+    const nameInput = document.querySelector(`.instance-name-input[data-instance-id="${instanceId}"]`);
+    const name = nameInput ? nameInput.value : `Instance ${instanceId}`;
     if (!confirm(`Delete instance '${name}'? This cannot be undone.`)) return;
     try {
       await Auth.apiJson(`/api/settings/instances/${instanceId}`, { method: 'DELETE' });
@@ -536,7 +546,7 @@ const Settings = {
           <td class="user-actions">
             ${!isSelf ? `
               <button class="user-action-btn" onclick="Settings.toggleAdmin(${u.id})" title="${u.is_admin ? 'Remove admin' : 'Make admin'}">${u.is_admin ? 'Demote' : 'Promote'}</button>
-              <button class="user-action-btn danger" onclick="Settings.deleteUser(${u.id}, '${this._escAttr(u.username)}')" title="Delete user">Delete</button>
+              <button class="user-action-btn danger" data-delete-user="${u.id}" title="Delete user">Delete</button>
             ` : '<span class="text-muted">You</span>'}
           </td>
         </tr>`;
@@ -583,7 +593,10 @@ const Settings = {
     }
   },
 
-  async deleteUser(userId, username) {
+  async deleteUser(userId) {
+    const btn = document.querySelector(`[data-delete-user="${userId}"]`);
+    const row = btn ? btn.closest('tr') : null;
+    const username = row ? row.cells[0].textContent : `User ${userId}`;
     if (!confirm(`Delete user '${username}'? This cannot be undone.`)) return;
     try {
       await Auth.apiJson(`/api/settings/users/${userId}`, { method: 'DELETE' });
