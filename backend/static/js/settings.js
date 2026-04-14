@@ -5,6 +5,10 @@
 const Settings = {
   needsSetup: false,
   uiSettings: null,
+  // Snapshot of last-saved UI settings, used to revert live preview on cancel/close.
+  _uiSavedSnapshot: null,
+  // Whether the UI tab currently has unsaved changes applied via live preview.
+  _uiDirty: false,
 
   init() {
     this.bindEvents();
@@ -66,6 +70,7 @@ const Settings = {
     try {
       const resp = await fetch('/api/settings/ui');
       this.uiSettings = await resp.json();
+      this._uiSavedSnapshot = { ...this.uiSettings };
       this.applyUISettings(this.uiSettings);
     } catch { /* use defaults from CSS */ }
   },
@@ -105,6 +110,8 @@ const Settings = {
       'docker': 'docker-content',
       'arr': 'arr-content',
       'streaming': 'streaming-content',
+      'uptime_kuma': 'uptime-content',
+      'infrastructure': 'infra-content',
     };
     const sections = [];
     for (const key of order) {
@@ -136,6 +143,12 @@ const Settings = {
   },
 
   close() {
+    // If UI tab has an unsaved live preview active, revert to the last-saved state.
+    if (this._uiDirty && this._uiSavedSnapshot) {
+      this.applyUISettings(this._uiSavedSnapshot);
+      this._uiDirty = false;
+      this._updatePreviewIndicator();
+    }
     document.getElementById('settings-overlay').classList.add('hidden');
     document.getElementById('auth-error').classList.add('hidden');
   },
@@ -232,12 +245,22 @@ const Settings = {
       r.checked = r.value === density;
     });
 
-    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming']);
+    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming', 'uptime_kuma', 'infrastructure']);
+    this._bindLivePreview();
+    this._uiDirty = false;
+    this._updatePreviewIndicator();
   },
 
   populateSectionOrder(order) {
     const container = document.getElementById('section-order-list');
-    const labels = { proxmox: 'Proxmox VE', docker: 'Docker Containers', arr: 'Media Library', streaming: 'Active Streams' };
+    const labels = {
+      proxmox: 'Proxmox VE',
+      docker: 'Docker Containers',
+      arr: 'Media Library',
+      streaming: 'Active Streams',
+      uptime_kuma: 'Uptime Monitoring',
+      infrastructure: 'Infrastructure',
+    };
     container.innerHTML = order.map((key, i) => `
       <div class="section-order-item" data-key="${this._escAttr(key)}">
         <span>${labels[key] || this._escHtml(key)}</span>
@@ -256,15 +279,14 @@ const Settings = {
     if (newIndex < 0 || newIndex >= order.length) return;
     [order[index], order[newIndex]] = [order[newIndex], order[index]];
     this.populateSectionOrder(order);
+    // Section-order moves count as a live preview change too.
+    this._livePreview();
   },
 
-  _getSectionOrder() {
-    const items = document.querySelectorAll('.section-order-item');
-    return Array.from(items).map(el => el.dataset.key);
-  },
+  // ── Live preview ─────────────────────────────────────────────
 
-  async saveUI() {
-    const payload = {
+  _collectUIPayload() {
+    return {
       accent_color: document.getElementById('ui-accent-color').value,
       bg_primary: document.getElementById('ui-bg-primary').value,
       bg_secondary: document.getElementById('ui-bg-secondary').value,
@@ -274,6 +296,67 @@ const Settings = {
       card_density: document.querySelector('input[name="density"]:checked')?.value || 'comfortable',
       section_order: this._getSectionOrder(),
     };
+  },
+
+  _bindLivePreview() {
+    // Idempotent — strip any previously bound listeners before re-attaching.
+    const ids = ['ui-accent-color', 'ui-bg-primary', 'ui-bg-secondary', 'ui-bg-card', 'ui-text-primary', 'ui-font-family'];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.previewBound) continue;
+      el.addEventListener('input', () => this._livePreview());
+      el.addEventListener('change', () => this._livePreview());
+      el.dataset.previewBound = '1';
+    }
+    document.querySelectorAll('input[name="density"]').forEach(r => {
+      if (r.dataset.previewBound) return;
+      r.addEventListener('change', () => this._livePreview());
+      r.dataset.previewBound = '1';
+    });
+  },
+
+  _livePreview() {
+    const payload = this._collectUIPayload();
+    this.applyUISettings(payload);
+    this._uiDirty = this._isPayloadDirty(payload);
+    this._updatePreviewIndicator();
+  },
+
+  _isPayloadDirty(payload) {
+    const snap = this._uiSavedSnapshot || {};
+    for (const k of Object.keys(payload)) {
+      const a = payload[k];
+      const b = snap[k];
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length || a.some((v, i) => v !== b[i])) return true;
+      } else if (a !== b) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  _updatePreviewIndicator() {
+    let indicator = document.getElementById('ui-preview-indicator');
+    if (!indicator) {
+      const saveBtn = document.getElementById('ui-save');
+      if (!saveBtn) return;
+      indicator = document.createElement('span');
+      indicator.id = 'ui-preview-indicator';
+      indicator.className = 'preview-indicator hidden';
+      indicator.textContent = 'Preview active — Save to persist';
+      saveBtn.parentNode.insertBefore(indicator, saveBtn);
+    }
+    indicator.classList.toggle('hidden', !this._uiDirty);
+  },
+
+  _getSectionOrder() {
+    const items = document.querySelectorAll('.section-order-item');
+    return Array.from(items).map(el => el.dataset.key);
+  },
+
+  async saveUI() {
+    const payload = this._collectUIPayload();
 
     try {
       const data = await Auth.apiJson('/api/settings/ui', {
@@ -282,7 +365,10 @@ const Settings = {
         body: JSON.stringify(payload),
       });
       this.uiSettings = data;
+      this._uiSavedSnapshot = { ...data };
       this.applyUISettings(data);
+      this._uiDirty = false;
+      this._updatePreviewIndicator();
       this.showToast('Appearance saved');
     } catch (e) {
       this.showToast(e.message, true);
@@ -293,8 +379,11 @@ const Settings = {
     try {
       const data = await Auth.apiJson('/api/settings/ui/reset', { method: 'POST' });
       this.uiSettings = data;
+      this._uiSavedSnapshot = { ...data };
       this.applyUISettings(data);
       this.populateUITab();
+      this._uiDirty = false;
+      this._updatePreviewIndicator();
       this.showToast('Reset to defaults');
     } catch (e) {
       this.showToast(e.message, true);
@@ -321,7 +410,10 @@ const Settings = {
         'Jellyfin': ['JELLYFIN_URL', 'JELLYFIN_API_KEY'],
         'Plex': ['PLEX_URL', 'PLEX_TOKEN'],
         'Tautulli': ['TAUTULLI_URL', 'TAUTULLI_API_KEY'],
-        'OpenClaw': ['OPENCLAW_URL', 'OPENCLAW_API_KEY', 'OPENCLAW_MODEL'],
+        'Claude': ['CLAUDE_API_KEY', 'CLAUDE_MODEL'],
+        'Uptime Kuma': ['UPTIME_KUMA_URL'],
+        'Infrastructure (NPM)': ['NPM_URL', 'NPM_API_TOKEN'],
+        'Telegram Notifications': ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'],
         'Dashboard': ['REFRESH_INTERVAL'],
       };
 

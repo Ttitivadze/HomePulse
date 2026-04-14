@@ -139,12 +139,28 @@
   gap: 12px;
   margin-top: 24px;
   padding: 0 24px 24px;
+  align-items: center;
 }
 
 .settings-actions .settings-save-btn,
 .settings-actions .settings-reset-btn {
   flex: 1;
 }
+
+/* Live-preview indicator shown next to the Save button when the UI form
+   has unsaved changes applied as a preview. */
+.preview-indicator {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--yellow, #eab308);
+  background: var(--yellow-dim, rgba(234, 179, 8, 0.12));
+  border: 1px solid var(--yellow, #eab308);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 8px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.preview-indicator.hidden { display: none; }
 
 /* ---- User bar ---- */
 .settings-user-bar {
