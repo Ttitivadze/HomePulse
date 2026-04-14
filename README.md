@@ -97,7 +97,13 @@ is removed in favour of Anthropic Claude.
 - **Docker** — Every container with status, resource usage, clickable service links, and friendly display names. Supports multiple Docker hosts (local socket + remote TCP).
 - **Media Library** — Radarr (movies), Sonarr (TV), Lidarr (music) showing downloaded, requested, and missing counts plus active download queue (completed items filtered out, first 3 shown with expand)
 - **Active Streams** — Jellyfin, Plex (direct), or Tautulli — see who's watching what, transcode status, and playback progress
-- **OpenClaw Chat** — Slide-out AI chat panel with streaming token display, connected to your self-hosted OpenClaw instance
+- **Claude AI Chat** — Slide-out chat panel with streaming token display, backed by Anthropic's API. Ask questions about your homelab, get troubleshooting help, or use it as a general assistant.
+- **Uptime Kuma** — Per-monitor status cards (requires `UPTIME_KUMA_METRICS_TOKEN`); falls back to a single reachability indicator otherwise
+- **Infrastructure** — Storage usage (Proxmox + optional NAS mounts), last-backup status per CT, SSL cert expiry via NPM
+- **Container updates** — Registry-digest comparison shows which containers have newer images available (6 h cached, rate-limit aware, private-registry auth supported)
+- **Telegram notifications** — Send test alerts from the dashboard; framework ready for auto-triggers in 2.1
+- **Light / dark theme** — Toggle in the header, persisted in localStorage
+- **External API keys** — Issue `hp_…` keys for external tools; optional `DASHBOARD_REQUIRE_AUTH` gate accepts JWT or `X-API-Key`
 - **Multi-instance support** — Add multiple Proxmox and Docker hosts through the admin panel — no `.env` numbering needed
 - **Single-request refresh** — One API call fetches everything in parallel; 30-second auto-refresh cycle
 - **Per-section retry** — If one service is down, retry just that section without reloading
@@ -140,9 +146,21 @@ All integrations are optional — configure only the services you use.
 | `JELLYFIN_URL`, `JELLYFIN_API_KEY` | Jellyfin (direct sessions API) |
 | `PLEX_URL`, `PLEX_TOKEN` | Plex (direct sessions API) |
 | `TAUTULLI_URL`, `TAUTULLI_API_KEY` | Tautulli (richer Plex stats) |
-| **Chat** | |
-| `OPENCLAW_URL`, `OPENCLAW_API_KEY` | OpenClaw instance |
-| `OPENCLAW_MODEL` | Model to use (default: `default`) |
+| **Claude AI** | |
+| `CLAUDE_API_KEY` | Anthropic API key (https://console.anthropic.com/) |
+| `CLAUDE_MODEL` | Model ID (default: `claude-sonnet-4-5`) |
+| **Uptime Kuma** | |
+| `UPTIME_KUMA_URL` | Reachability probe |
+| `UPTIME_KUMA_METRICS_TOKEN` | Optional — enables per-monitor cards via `/metrics` |
+| **Infrastructure** | |
+| `NPM_URL`, `NPM_API_TOKEN` | Nginx Proxy Manager API for SSL cert expiry |
+| `NAS_MOUNTS` | Comma-separated container-visible paths (e.g. `/mnt/nas,/mnt/backup`) |
+| **Notifications** | |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram alerting |
+| **Security** | |
+| `DASHBOARD_REQUIRE_AUTH` | When `true`, dashboard requires JWT or `X-API-Key` (default `false`) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins when auth is on (default: same-origin) |
+| `REGISTRY_AUTH_JSON` | JSON map `{"ghcr.io":{"username":"…","password":"…"}}` for private-registry update checks |
 | **Dashboard** | |
 | `REFRESH_INTERVAL` | Auto-refresh in seconds (default: `30`) |
 
@@ -150,23 +168,24 @@ All integrations are optional — configure only the services you use.
 
 ### Display Config (`config/config.yml`)
 
-Toggle dashboard sections and set friendly Docker container names:
+Set the dashboard title, friendly container names, and custom per-container URLs:
 
 ```yaml
 dashboard:
   title: "HomePulse"
   refresh_interval: 30
 
-sections:
-  proxmox: true
-  docker: true
-  arr_suite: true
-  openclaw_chat: true
-
 docker_labels:
   plex: "Plex Media Server"
   radarr: "Radarr"
+
+docker_links:
+  # Optional: override the ↗ link target per container.
+  # Defaults to http://<docker host>:<first exposed port> when empty.
+  plex: "https://plex.example.com"
 ```
+
+Section ordering is controlled from the admin Settings panel (Appearance → Section Order) — no YAML toggle.
 
 ### Getting API Keys
 
@@ -207,9 +226,14 @@ backend/
   integrations/
     proxmox.py           # Proxmox VE (parallel node fetches)
     docker_int.py        # Docker socket (parallel stats)
+    docker_updates.py    # Container update checks (registry digest, 6h cached)
     arr.py               # Radarr/Sonarr/Lidarr + Jellyfin/Plex/Tautulli
-    openclaw.py          # Chat proxy (streaming + non-streaming)
+    claude_chat.py       # Anthropic Claude chat proxy (streaming SSE)
+    uptime_kuma.py       # Uptime Kuma reachability + /metrics parser
+    infrastructure.py    # Proxmox storage, backups, SSL certs, NAS mounts
+    api_keys.py          # External API key CRUD + X-API-Key verification
     settings.py          # Admin settings (UI, services, users)
+  notifications.py       # Telegram notification provider
   static/
     index.html           # SPA shell
     js/utils.js          # Shared escapeHtml/escapeAttr utilities
@@ -235,9 +259,12 @@ tests/                   # pytest test suite
 | GET | `/api/arr/sonarr` | TV library + queue |
 | GET | `/api/arr/lidarr` | Music library + queue |
 | GET | `/api/arr/streaming` | Active streams |
-| GET | `/api/openclaw/status` | OpenClaw online/offline |
-| POST | `/api/openclaw/chat` | Chat (JSON response) |
-| POST | `/api/openclaw/chat/stream` | Chat (SSE streaming) |
+| GET | `/api/uptime-kuma/status` | Uptime Kuma reachability + monitors |
+| GET | `/api/infrastructure/status` | Storage / backups / SSL / NAS |
+| GET | `/api/claude/status` | Claude chat configured? |
+| POST | `/api/claude/chat` | Chat (JSON response) |
+| POST | `/api/claude/chat/stream` | Chat (SSE streaming) |
+| POST | `/api/notifications/test` | Send a Telegram test alert |
 | GET | `/api/auth/status` | Check if setup is needed |
 | POST | `/api/auth/setup` | Create first admin account |
 | POST | `/api/auth/login` | Login and get JWT |
@@ -253,6 +280,9 @@ tests/                   # pytest test suite
 | POST | `/api/settings/instances/{id}/test` | Test instance connectivity (admin) |
 | GET | `/api/settings/users` | List users (admin) |
 | POST | `/api/settings/users` | Create user (admin) |
+| GET | `/api/settings/api-keys` | List API keys (admin) |
+| POST | `/api/settings/api-keys` | Create API key — plaintext shown once (admin) |
+| DELETE | `/api/settings/api-keys/{id}` | Revoke API key (admin) |
 
 ## Docker Notes
 

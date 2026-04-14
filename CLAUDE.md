@@ -22,7 +22,7 @@ You are my development partner. Follow these principles at all times:
 
 ## Project Overview
 
-HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), and an embedded OpenClaw AI chat assistant. Includes a JWT-based account system with an admin settings panel for UI customization and service configuration management.
+HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), Uptime Kuma, infrastructure (storage/backups/SSL/NAS mounts), and an embedded Anthropic Claude AI chat assistant. Includes a JWT-based account system with an admin settings panel for UI customization, service configuration, and external API key management.
 
 ## Tech Stack
 
@@ -142,9 +142,12 @@ pytest tests/ -v
 | GET | `/api/arr/sonarr` | TV show stats + download queue |
 | GET | `/api/arr/lidarr` | Music library stats + download queue |
 | GET | `/api/arr/streaming` | Active streams (Jellyfin, Plex, and/or Tautulli) |
-| GET | `/api/openclaw/status` | OpenClaw connection check |
-| POST | `/api/openclaw/chat` | Chat message (JSON response) |
-| POST | `/api/openclaw/chat/stream` | Chat message (streaming SSE response) |
+| GET | `/api/claude/status` | Claude chat configured? |
+| POST | `/api/claude/chat` | Chat message (JSON response) |
+| POST | `/api/claude/chat/stream` | Chat message (streaming SSE response) |
+| GET | `/api/uptime-kuma/status` | Uptime Kuma reachability + per-monitor list |
+| GET | `/api/infrastructure/status` | Storage / backups / SSL certs / NAS mounts |
+| POST | `/api/notifications/test` | Send a test Telegram notification |
 
 ### Authentication
 
@@ -193,7 +196,7 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **Async-first**: All endpoint handlers and HTTP calls are async (`async def`, `httpx.AsyncClient`)
 - **CORS enabled**: `CORSMiddleware` allows all origins with GET, POST, PUT, DELETE so the dashboard works from any LAN device
 - **Concurrent I/O**: `asyncio.gather` for parallel API calls within each integration; `asyncio.to_thread` for blocking Docker stats calls and SQLite operations
-- **Shared HTTP client**: `arr.py` maintains a module-level `httpx.AsyncClient` reused by arr + openclaw integrations (avoids per-request TCP/TLS overhead). Closed during app shutdown via the FastAPI lifespan.
+- **Shared HTTP client**: `arr.py` maintains a module-level `httpx.AsyncClient` reused by the arr integrations (avoids per-request TCP/TLS overhead). Closed during app shutdown via the FastAPI lifespan. Uptime Kuma and Infrastructure use their own short-lived clients per fetch because their request cadences differ significantly.
 - **TTL cache**: `backend/cache.py` provides a 15-second in-memory cache. Integration `fetch_*` functions check the cache before making external calls. This absorbs brief service outages and reduces redundant requests during the 30-second refresh cycle.
 - **Two-tier data functions**: Each integration exposes `fetch_*_data()` (returns a dict, never raises) and a router endpoint (raises `HTTPException` on error). The dashboard endpoint calls the `fetch_*` functions directly.
 - **Router-per-integration**: Each integration is a separate module with its own `APIRouter`, mounted in `main.py` with a prefix
@@ -212,10 +215,10 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **No framework or bundler**: Plain ES6+ JavaScript with Fetch API
 - **Single-request refresh**: `loadDashboard()` calls `/api/dashboard` once per cycle; all data arrives in one response
 - **Per-section retry**: Error cards include a "Retry" button that re-fetches only the failed section via the individual endpoint
-- **Streaming chat**: The chat panel uses `/api/openclaw/chat/stream` (SSE) to display tokens as they arrive, with a non-streaming fallback
+- **Streaming chat**: The chat panel uses `/api/claude/chat/stream` (SSE) to display tokens as they arrive, with a non-streaming fallback
 - **Chat history trimming**: Only the last 50 messages are sent in each chat request to keep payloads bounded
 - **"Last updated" display**: Header shows relative timestamp ("Updated 5s ago") refreshed every 5 seconds
-- **OpenClaw status check**: The chat panel calls `/api/openclaw/status` on open and displays Online/Offline
+- **Claude status check**: The chat panel calls `/api/claude/status` on open and displays Online/Offline (Offline = no `CLAUDE_API_KEY` configured)
 - **Module pattern**: `App` object in `app.js`, `Auth` in `auth.js`, `Settings` in `settings.js`
 - **XSS prevention**: `escapeHtml()` for text content, `_escAttr()` for HTML attribute contexts (escapes quotes). Both used consistently in template literals.
 - **Settings panel**: Modal overlay with three tabs — Appearance (colors, font, density, section order), Services (API URLs/keys with test button), Accounts (create/delete users, toggle admin). First-run shows setup wizard.
