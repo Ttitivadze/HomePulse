@@ -221,6 +221,76 @@ async def get_lidarr():
 
 # ── Streaming (Jellyfin / Plex / Tautulli) ────────────────────────
 
+# Shape of a single normalized streaming session. Each *_sessions fetcher
+# returns a list of dicts with exactly these keys so the frontend only
+# has one schema to render. Centralising the schema here means adding a
+# new field in the future (e.g. bitrate) is a single-line change.
+_SESSION_FIELDS = (
+    "source", "user", "title", "media_type", "state",
+    "progress", "quality", "player", "transcode",
+)
+
+
+def _session(source: str, **kwargs) -> dict:
+    """Build a streaming-session dict with defensive defaults.
+
+    Any field not provided is filled with a sensible default ("Unknown"
+    for identifying fields, "" for optional ones). Extra kwargs are
+    silently ignored so source-specific key typos surface in tests, not
+    in production.
+    """
+    defaults = {
+        "source": source,
+        "user": "Unknown",
+        "title": "Unknown",
+        "media_type": "unknown",
+        "state": "unknown",
+        "progress": 0,
+        "quality": "",
+        "player": "",
+        "transcode": "direct play",
+    }
+    for key in _SESSION_FIELDS:
+        if key in kwargs and kwargs[key] is not None:
+            defaults[key] = kwargs[key]
+    if isinstance(defaults["media_type"], str):
+        defaults["media_type"] = defaults["media_type"].lower()
+    return defaults
+
+
+def _episode_title(series: str | None, season_idx, episode_idx, item_title: str | None) -> str:
+    """Build "Show - S01E02 - Episode" when series info is available, else fall back.
+
+    Shared between Jellyfin and Plex because both have the same show/season/
+    episode shape even though the field names differ.
+    """
+    item_title = item_title or "Unknown"
+    if not series:
+        return item_title
+    try:
+        tag = f"S{int(season_idx):02d}E{int(episode_idx):02d}"
+    except (TypeError, ValueError):
+        return f"{series} - {item_title}"
+    return f"{series} - {tag} - {item_title}"
+
+
+def _progress_pct(position, total) -> float:
+    """Percent-complete helper; returns 0 when total is missing / zero.
+
+    Note: the pre-refactor code used `total or 1` as a guard which quietly
+    inflated progress to >100% for missing-duration items. We return 0
+    here since "unknown progress" is a more honest signal than a
+    nonsense number.
+    """
+    try:
+        total_int = int(total) if total is not None else 0
+        position_int = int(position or 0)
+    except (TypeError, ValueError):
+        return 0
+    if total_int <= 0:
+        return 0
+    return round(position_int / total_int * 100, 1)
+
 
 async def _fetch_jellyfin_sessions() -> list:
     """Fetch active sessions from Jellyfin's /Sessions endpoint."""
@@ -237,39 +307,26 @@ async def _fetch_jellyfin_sessions() -> list:
         now_playing = s.get("NowPlayingItem")
         if not now_playing:
             continue
-        # Build a title like "Show - S01E02 - Episode Name" or just the item name
-        title = now_playing.get("Name", "Unknown")
-        series = now_playing.get("SeriesName")
-        if series:
-            ep = now_playing.get("ParentIndexNumber")
-            ep_num = now_playing.get("IndexNumber")
-            ep_tag = f"S{int(ep):02d}E{int(ep_num):02d}" if ep is not None and ep_num is not None else ""
-            title = f"{series} - {ep_tag} - {title}" if ep_tag else f"{series} - {title}"
 
         play_state = s.get("PlayState", {})
-        runtime = now_playing.get("RunTimeTicks", 1) or 1
-        position = play_state.get("PositionTicks", 0) or 0
-        progress = round(position / runtime * 100, 1)
+        media_streams = now_playing.get("MediaStreams") or [{}]
 
-        sessions.append(
-            {
-                "user": s.get("UserName", "Unknown"),
-                "title": title,
-                "media_type": now_playing.get("Type", "unknown").lower(),
-                "state": "playing" if not play_state.get("IsPaused") else "paused",
-                "progress": progress,
-                "quality": now_playing.get("MediaStreams", [{}])[0].get("DisplayTitle", "")
-                if now_playing.get("MediaStreams")
-                else "",
-                "player": s.get("Client", ""),
-                "transcode": (
-                    "transcode"
-                    if s.get("TranscodingInfo")
-                    else "direct play"
-                ),
-                "source": "Jellyfin",
-            }
-        )
+        sessions.append(_session(
+            "Jellyfin",
+            user=s.get("UserName"),
+            title=_episode_title(
+                now_playing.get("SeriesName"),
+                now_playing.get("ParentIndexNumber"),
+                now_playing.get("IndexNumber"),
+                now_playing.get("Name"),
+            ),
+            media_type=now_playing.get("Type"),
+            state="paused" if play_state.get("IsPaused") else "playing",
+            progress=_progress_pct(play_state.get("PositionTicks"), now_playing.get("RunTimeTicks")),
+            quality=media_streams[0].get("DisplayTitle", ""),
+            player=s.get("Client"),
+            transcode="transcode" if s.get("TranscodingInfo") else "direct play",
+        ))
     return sessions
 
 
@@ -289,43 +346,32 @@ async def _fetch_plex_sessions() -> list:
     container = resp.json().get("MediaContainer", {})
     sessions = []
     for item in container.get("Metadata", []):
-        title = item.get("title", "Unknown")
-        grandparent = item.get("grandparentTitle", "")
-        if grandparent:
-            season = item.get("parentIndex")
-            episode = item.get("index")
-            ep_tag = f"S{int(season):02d}E{int(episode):02d}" if season is not None and episode is not None else ""
-            title = f"{grandparent} - {ep_tag} - {title}" if ep_tag else f"{grandparent} - {title}"
-
-        duration = int(item.get("duration", 1)) or 1
-        view_offset = int(item.get("viewOffset", 0))
-        progress = round(view_offset / duration * 100, 1)
+        media = item.get("Media") or []
 
         transcode = "direct play"
         if item.get("TranscodeSession"):
             transcode = "transcode"
-        elif item.get("Media"):
-            media = item["Media"]
-            parts = media[0].get("Part", []) if media else []
-            decision = parts[0].get("decision", "") if parts else ""
-            if decision == "transcode":
+        elif media:
+            parts = media[0].get("Part") or []
+            if parts and parts[0].get("decision") == "transcode":
                 transcode = "transcode"
 
-        sessions.append(
-            {
-                "user": item.get("User", {}).get("title", "Unknown"),
-                "title": title,
-                "media_type": item.get("type", "unknown"),
-                "state": item.get("Player", {}).get("state", "unknown"),
-                "progress": progress,
-                "quality": item.get("Media", [{}])[0].get("videoResolution", "")
-                if item.get("Media")
-                else "",
-                "player": item.get("Player", {}).get("product", ""),
-                "transcode": transcode,
-                "source": "Plex",
-            }
-        )
+        sessions.append(_session(
+            "Plex",
+            user=item.get("User", {}).get("title"),
+            title=_episode_title(
+                item.get("grandparentTitle"),
+                item.get("parentIndex"),
+                item.get("index"),
+                item.get("title"),
+            ),
+            media_type=item.get("type"),
+            state=item.get("Player", {}).get("state"),
+            progress=_progress_pct(item.get("viewOffset"), item.get("duration")),
+            quality=media[0].get("videoResolution", "") if media else "",
+            player=item.get("Player", {}).get("product"),
+            transcode=transcode,
+        ))
     return sessions
 
 
@@ -334,22 +380,20 @@ async def _fetch_tautulli_sessions() -> list:
     data = await _fetch_tautulli("get_activity")
     if data is None:
         return []
-    sessions = []
-    for s in data.get("sessions", []):
-        sessions.append(
-            {
-                "user": s.get("friendly_name", "Unknown"),
-                "title": s.get("full_title", s.get("title", "Unknown")),
-                "media_type": s.get("media_type", "unknown"),
-                "state": s.get("state", "unknown"),
-                "progress": s.get("progress_percent", 0),
-                "quality": s.get("quality_profile", ""),
-                "player": s.get("player", ""),
-                "transcode": s.get("transcode_decision", "direct play"),
-                "source": "Tautulli",
-            }
+    return [
+        _session(
+            "Tautulli",
+            user=s.get("friendly_name"),
+            title=s.get("full_title") or s.get("title"),
+            media_type=s.get("media_type"),
+            state=s.get("state"),
+            progress=s.get("progress_percent", 0),
+            quality=s.get("quality_profile", ""),
+            player=s.get("player"),
+            transcode=s.get("transcode_decision", "direct play"),
         )
-    return sessions
+        for s in data.get("sessions", [])
+    ]
 
 
 async def fetch_streaming_data() -> dict:

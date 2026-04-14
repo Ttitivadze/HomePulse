@@ -5,6 +5,10 @@
 const Settings = {
   needsSetup: false,
   uiSettings: null,
+  // Snapshot of last-saved UI settings, used to revert live preview on cancel/close.
+  _uiSavedSnapshot: null,
+  // Whether the UI tab currently has unsaved changes applied via live preview.
+  _uiDirty: false,
 
   init() {
     this.bindEvents();
@@ -24,6 +28,7 @@ const Settings = {
     document.getElementById('ui-reset').addEventListener('click', () => this.resetUI());
     document.getElementById('services-save').addEventListener('click', () => this.saveServices());
     document.getElementById('add-user-btn').addEventListener('click', () => this.addUser());
+    document.getElementById('create-api-key-btn').addEventListener('click', () => this.createApiKey());
 
     // Tab switching
     document.querySelectorAll('.settings-tab').forEach(tab => {
@@ -41,6 +46,8 @@ const Settings = {
       if (delInst) { this.deleteInstance(parseInt(delInst.dataset.deleteInstance, 10)); return; }
       const delUser = e.target.closest('[data-delete-user]');
       if (delUser) { this.deleteUser(parseInt(delUser.dataset.deleteUser, 10)); return; }
+      const revokeKey = e.target.closest('[data-revoke-api-key]');
+      if (revokeKey) { this.revokeApiKey(parseInt(revokeKey.dataset.revokeApiKey, 10)); return; }
     });
   },
 
@@ -66,6 +73,7 @@ const Settings = {
     try {
       const resp = await fetch('/api/settings/ui');
       this.uiSettings = await resp.json();
+      this._uiSavedSnapshot = { ...this.uiSettings };
       this.applyUISettings(this.uiSettings);
     } catch { /* use defaults from CSS */ }
   },
@@ -105,6 +113,8 @@ const Settings = {
       'docker': 'docker-content',
       'arr': 'arr-content',
       'streaming': 'streaming-content',
+      'uptime_kuma': 'uptime-content',
+      'infrastructure': 'infra-content',
     };
     const sections = [];
     for (const key of order) {
@@ -136,6 +146,12 @@ const Settings = {
   },
 
   close() {
+    // If UI tab has an unsaved live preview active, revert to the last-saved state.
+    if (this._uiDirty && this._uiSavedSnapshot) {
+      this.applyUISettings(this._uiSavedSnapshot);
+      this._uiDirty = false;
+      this._updatePreviewIndicator();
+    }
     document.getElementById('settings-overlay').classList.add('hidden');
     document.getElementById('auth-error').classList.add('hidden');
   },
@@ -214,6 +230,7 @@ const Settings = {
 
     if (tabName === 'services') this.loadServices();
     if (tabName === 'users') this.loadUsers();
+    if (tabName === 'api-keys') this.loadApiKeys();
   },
 
   // ── UI Tab ──────────────────────────────────────────────────
@@ -232,12 +249,22 @@ const Settings = {
       r.checked = r.value === density;
     });
 
-    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming']);
+    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming', 'uptime_kuma', 'infrastructure']);
+    this._bindLivePreview();
+    this._uiDirty = false;
+    this._updatePreviewIndicator();
   },
 
   populateSectionOrder(order) {
     const container = document.getElementById('section-order-list');
-    const labels = { proxmox: 'Proxmox VE', docker: 'Docker Containers', arr: 'Media Library', streaming: 'Active Streams' };
+    const labels = {
+      proxmox: 'Proxmox VE',
+      docker: 'Docker Containers',
+      arr: 'Media Library',
+      streaming: 'Active Streams',
+      uptime_kuma: 'Uptime Monitoring',
+      infrastructure: 'Infrastructure',
+    };
     container.innerHTML = order.map((key, i) => `
       <div class="section-order-item" data-key="${this._escAttr(key)}">
         <span>${labels[key] || this._escHtml(key)}</span>
@@ -256,15 +283,14 @@ const Settings = {
     if (newIndex < 0 || newIndex >= order.length) return;
     [order[index], order[newIndex]] = [order[newIndex], order[index]];
     this.populateSectionOrder(order);
+    // Section-order moves count as a live preview change too.
+    this._livePreview();
   },
 
-  _getSectionOrder() {
-    const items = document.querySelectorAll('.section-order-item');
-    return Array.from(items).map(el => el.dataset.key);
-  },
+  // ── Live preview ─────────────────────────────────────────────
 
-  async saveUI() {
-    const payload = {
+  _collectUIPayload() {
+    return {
       accent_color: document.getElementById('ui-accent-color').value,
       bg_primary: document.getElementById('ui-bg-primary').value,
       bg_secondary: document.getElementById('ui-bg-secondary').value,
@@ -274,6 +300,67 @@ const Settings = {
       card_density: document.querySelector('input[name="density"]:checked')?.value || 'comfortable',
       section_order: this._getSectionOrder(),
     };
+  },
+
+  _bindLivePreview() {
+    // Idempotent — strip any previously bound listeners before re-attaching.
+    const ids = ['ui-accent-color', 'ui-bg-primary', 'ui-bg-secondary', 'ui-bg-card', 'ui-text-primary', 'ui-font-family'];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.previewBound) continue;
+      el.addEventListener('input', () => this._livePreview());
+      el.addEventListener('change', () => this._livePreview());
+      el.dataset.previewBound = '1';
+    }
+    document.querySelectorAll('input[name="density"]').forEach(r => {
+      if (r.dataset.previewBound) return;
+      r.addEventListener('change', () => this._livePreview());
+      r.dataset.previewBound = '1';
+    });
+  },
+
+  _livePreview() {
+    const payload = this._collectUIPayload();
+    this.applyUISettings(payload);
+    this._uiDirty = this._isPayloadDirty(payload);
+    this._updatePreviewIndicator();
+  },
+
+  _isPayloadDirty(payload) {
+    const snap = this._uiSavedSnapshot || {};
+    for (const k of Object.keys(payload)) {
+      const a = payload[k];
+      const b = snap[k];
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length || a.some((v, i) => v !== b[i])) return true;
+      } else if (a !== b) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  _updatePreviewIndicator() {
+    let indicator = document.getElementById('ui-preview-indicator');
+    if (!indicator) {
+      const saveBtn = document.getElementById('ui-save');
+      if (!saveBtn) return;
+      indicator = document.createElement('span');
+      indicator.id = 'ui-preview-indicator';
+      indicator.className = 'preview-indicator hidden';
+      indicator.textContent = 'Preview active — Save to persist';
+      saveBtn.parentNode.insertBefore(indicator, saveBtn);
+    }
+    indicator.classList.toggle('hidden', !this._uiDirty);
+  },
+
+  _getSectionOrder() {
+    const items = document.querySelectorAll('.section-order-item');
+    return Array.from(items).map(el => el.dataset.key);
+  },
+
+  async saveUI() {
+    const payload = this._collectUIPayload();
 
     try {
       const data = await Auth.apiJson('/api/settings/ui', {
@@ -282,7 +369,10 @@ const Settings = {
         body: JSON.stringify(payload),
       });
       this.uiSettings = data;
+      this._uiSavedSnapshot = { ...data };
       this.applyUISettings(data);
+      this._uiDirty = false;
+      this._updatePreviewIndicator();
       this.showToast('Appearance saved');
     } catch (e) {
       this.showToast(e.message, true);
@@ -293,8 +383,11 @@ const Settings = {
     try {
       const data = await Auth.apiJson('/api/settings/ui/reset', { method: 'POST' });
       this.uiSettings = data;
+      this._uiSavedSnapshot = { ...data };
       this.applyUISettings(data);
       this.populateUITab();
+      this._uiDirty = false;
+      this._updatePreviewIndicator();
       this.showToast('Reset to defaults');
     } catch (e) {
       this.showToast(e.message, true);
@@ -321,7 +414,10 @@ const Settings = {
         'Jellyfin': ['JELLYFIN_URL', 'JELLYFIN_API_KEY'],
         'Plex': ['PLEX_URL', 'PLEX_TOKEN'],
         'Tautulli': ['TAUTULLI_URL', 'TAUTULLI_API_KEY'],
-        'OpenClaw': ['OPENCLAW_URL', 'OPENCLAW_API_KEY', 'OPENCLAW_MODEL'],
+        'Claude': ['CLAUDE_API_KEY', 'CLAUDE_MODEL'],
+        'Uptime Kuma': ['UPTIME_KUMA_URL'],
+        'Infrastructure (NPM)': ['NPM_URL', 'NPM_API_TOKEN'],
+        'Telegram Notifications': ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'],
         'Dashboard': ['REFRESH_INTERVAL'],
       };
 
@@ -604,6 +700,85 @@ const Settings = {
       await Auth.apiJson(`/api/settings/users/${userId}`, { method: 'DELETE' });
       this.showToast(`User '${username}' deleted`);
       this.loadUsers();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  // ── API Keys Tab ────────────────────────────────────────────
+
+  async loadApiKeys() {
+    const container = document.getElementById('api-keys-list');
+    container.innerHTML = '<div class="loading-skeleton" style="height:120px"></div>';
+    try {
+      const keys = await Auth.apiJson('/api/settings/api-keys');
+      if (!keys.length) {
+        container.innerHTML = '<div class="settings-help">No API keys yet.</div>';
+        return;
+      }
+      let html = '<table class="users-table"><thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last Used</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      for (const k of keys) {
+        const status = k.revoked_at
+          ? '<span class="role-badge">Revoked</span>'
+          : '<span class="role-badge admin">Active</span>';
+        const created = k.created_at ? new Date(k.created_at).toLocaleDateString() : '-';
+        const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never';
+        const actions = k.revoked_at
+          ? '<span class="text-muted">—</span>'
+          : `<button class="user-action-btn danger" data-revoke-api-key="${k.id}" title="Revoke key">Revoke</button>`;
+        html += `<tr>
+          <td>${this._escHtml(k.name)}</td>
+          <td><code>${this._escHtml(k.key_prefix)}...</code></td>
+          <td>${created}</td>
+          <td>${this._escHtml(lastUsed)}</td>
+          <td>${status}</td>
+          <td class="user-actions">${actions}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div class="settings-error">${this._escHtml(e.message)}</div>`;
+    }
+  },
+
+  async createApiKey() {
+    const nameEl = document.getElementById('new-api-key-name');
+    const name = nameEl.value.trim();
+    if (!name) {
+      this.showToast('Name is required', true);
+      return;
+    }
+    try {
+      const data = await Auth.apiJson('/api/settings/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      nameEl.value = '';
+      this._showNewApiKey(data.name, data.key);
+      this.loadApiKeys();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  _showNewApiKey(name, key) {
+    const banner = document.getElementById('new-api-key-banner');
+    if (!banner) return;
+    banner.classList.remove('hidden');
+    banner.innerHTML = `
+      <strong>API key for "${this._escHtml(name)}" — copy now, it will not be shown again:</strong>
+      <div class="api-key-value"><code>${this._escHtml(key)}</code></div>
+      <div class="settings-help" style="margin-top:6px">Use with: <code>curl -H "X-API-Key: ${this._escHtml(key)}" /api/dashboard</code></div>`;
+  },
+
+  async revokeApiKey(keyId) {
+    if (!confirm('Revoke this API key? Any tool using it will stop working immediately.')) return;
+    try {
+      await Auth.apiJson(`/api/settings/api-keys/${keyId}`, { method: 'DELETE' });
+      this.showToast('API key revoked');
+      this.loadApiKeys();
     } catch (e) {
       this.showToast(e.message, true);
     }

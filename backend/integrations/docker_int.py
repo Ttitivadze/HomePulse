@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache, database as db
+from backend.integrations.docker_updates import annotate_update_available
 
 logger = logging.getLogger("homepulse.docker")
 
@@ -100,10 +101,19 @@ async def _fetch_containers(client, host_url: str) -> dict:
                 stats = {"cpu_percent": 0, "mem_usage": 0, "mem_limit": 0}
             info.update(stats)
 
-        return {"configured": True, "containers": container_info, "host_url": host_url}
+        # Annotate update_available using the registry. Cached for 6 h per
+        # image ref; capped at MAX_CHECKS_PER_CYCLE uncached lookups.
+        try:
+            await annotate_update_available(client, containers, container_info)
+        except Exception:
+            logger.exception("Container update annotation failed")
+            for info in container_info:
+                info.setdefault("update_available", None)
+
+        return {"configured": True, "containers": container_info, "host_url": host_url, "docker_links": settings.docker_links}
     except Exception:
         logger.exception("Docker fetch failed")
-        return {"configured": True, "containers": [], "host_url": host_url, "error": "Docker request failed"}
+        return {"configured": True, "containers": [], "host_url": host_url, "docker_links": settings.docker_links, "error": "Docker request failed"}
     finally:
         await asyncio.to_thread(client.close)
 
@@ -116,10 +126,16 @@ async def fetch_docker_data() -> dict:
         access_err = _check_socket_access()
         if access_err:
             logger.warning(access_err)
-            return {"configured": True, "containers": [], "host_url": settings.DOCKER_URL, "error": access_err}
+            return {"configured": True, "containers": [], "host_url": settings.DOCKER_URL, "docker_links": settings.docker_links, "error": access_err}
         return {"configured": False, "containers": []}
 
-    return await _fetch_containers(client, settings.DOCKER_URL)
+    cached = cache.get("docker:default", ttl=30)
+    if cached is not None:
+        return cached
+
+    data = await _fetch_containers(client, settings.DOCKER_URL)
+    cache.put("docker:default", data)
+    return data
 
 
 async def _fetch_additional_instance(instance_id: int, name: str, config: dict) -> dict:

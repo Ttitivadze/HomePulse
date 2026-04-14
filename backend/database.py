@@ -80,6 +80,22 @@ def _init_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_service_instances_type ON service_instances(service_type);
 
+        -- External API keys for programmatic access (read-only).
+        -- key_prefix = first 11 chars of the raw key (e.g. 'hp_ABCDEFGH'),
+        -- indexed for fast lookup; key_hash = bcrypt of the full raw key.
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            key_prefix TEXT NOT NULL,
+            key_hash TEXT NOT NULL,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMP,
+            revoked_at TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
+
         -- Ensure exactly one UI settings row exists
         INSERT OR IGNORE INTO ui_settings (id) VALUES (1);
     """)

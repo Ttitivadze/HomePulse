@@ -35,7 +35,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`) + SQLite overrides from admin panel
 - **Testing**: pytest + pytest-asyncio, httpx test client
 - **Logging**: Python `logging` module under the `homepulse.*` namespace
-- **Versioning**: Semantic versioning via `VERSION` file (currently 1.2.4)
+- **Versioning**: Semantic versioning via `VERSION` file (currently 2.0.0)
 
 ## Repository Structure
 
@@ -49,9 +49,14 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── integrations/        # One module per external service
 │   │   ├── proxmox.py       # Proxmox VE API client (parallel node fetches)
 │   │   ├── docker_int.py    # Docker socket integration (parallel stats, display labels)
+│   │   ├── docker_updates.py # Registry digest comparison for container update badges
 │   │   ├── arr.py           # Radarr/Sonarr/Lidarr + streaming (Jellyfin/Plex/Tautulli)
-│   │   ├── openclaw.py      # OpenClaw chat proxy (standard + streaming)
+│   │   ├── claude_chat.py   # Anthropic Claude chat proxy (streaming SSE)
+│   │   ├── uptime_kuma.py   # Uptime Kuma status widget
+│   │   ├── infrastructure.py # Storage / backups / SSL cert monitoring
+│   │   ├── api_keys.py      # External API key issuing + X-API-Key verification
 │   │   └── settings.py      # Admin settings CRUD (UI prefs, services, users)
+│   ├── notifications.py     # Notification providers (Telegram) + /test endpoint
 │   └── static/              # Frontend assets served by FastAPI
 │       ├── index.html        # SPA shell, settings overlay, mobile-ready meta tags
 │       ├── js/
@@ -65,19 +70,25 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 ├── config/
 │   └── config.yml           # Dashboard display settings (section toggles, container labels)
 ├── data/                    # SQLite database (created at runtime, gitignored)
-├── tests/                   # pytest test suite (51 tests)
+├── tests/                   # pytest test suite (93 tests)
 │   ├── conftest.py          # Shared fixtures (async_client, cache clearing, test DB)
 │   ├── test_health.py       # Health + root endpoint tests
 │   ├── test_dashboard.py    # Aggregated dashboard endpoint tests
 │   ├── test_arr.py          # Radarr/Sonarr/Lidarr/Jellyfin/Plex/Tautulli streaming tests
 │   ├── test_proxmox.py      # Proxmox endpoint tests
-│   ├── test_docker.py       # Docker endpoint tests
-│   ├── test_openclaw.py     # OpenClaw endpoint tests
+│   ├── test_docker.py       # Docker endpoint tests + docker_links regression
+│   ├── test_claude.py       # Claude chat status + configured/unconfigured paths
+│   ├── test_uptime_kuma.py  # Uptime Kuma configured/online/offline paths
+│   ├── test_infrastructure.py # Storage/backups/SSL graceful-degrade tests
+│   ├── test_notifications.py # Telegram send + /test endpoint
+│   ├── test_rate_limit.py   # Login rate-limit (5 attempts / 60s / IP → 429)
+│   ├── test_api_keys.py     # API key CRUD + X-API-Key auth + gate flag
+│   ├── test_container_updates.py # Registry digest comparison + cache + rate-cap
 │   ├── test_cache.py        # TTL cache unit tests
 │   ├── test_auth.py         # Auth system tests (setup, login, JWT, status)
 │   ├── test_settings.py     # Settings tests (UI, users, services, validation)
 │   └── test_instances.py    # Service instance CRUD tests (multi-instance)
-├── VERSION                  # Semantic version (1.2.4)
+├── VERSION                  # Semantic version (2.0.0)
 ├── LICENSE                  # MIT License
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, data, docs from Docker image
@@ -265,7 +276,9 @@ Key patterns:
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
 
-- `1.2.4` — Cache-busting static assets, version display in header (current)
+- `2.0.0` — Major update: Claude chat (replaces OpenClaw), Uptime Kuma + Infrastructure widgets, Telegram notifications, login rate limiting, settings hot-reload, light-theme toggle, container update badges (frontend + registry-digest backend), live-preview of appearance settings, external API keys with X-API-Key auth, DASHBOARD_REQUIRE_AUTH gate (current)
+- `1.3.0` — Homelab-only pre-2.0.0 snapshot (never released on main): Claude/Uptime Kuma/Infra/Telegram/rate-limit/theme toggle landing ground
+- `1.2.4` — Cache-busting static assets, version display in header
 - `1.2.3` — Login form dismisses on successful auth, reopens straight into settings panel
 - `1.2.2` — Defensive frontend rendering, distinguish render errors from API failures
 - `1.2.1` — Fix Docker socket permission detection, add DOCKER_GID config
@@ -300,7 +313,7 @@ These are deliberate choices made during development. Don't revert without discu
 - **Setup endpoint has TOCTOU protection**: `auth.py` wraps the INSERT in try/except to handle the race between the existence check and insert
 - **Two escape functions exist for a reason**: `escapeHtml()` for text content, `escapeAttr()` for HTML attribute contexts (escapes quotes). Both in `utils.js`, delegated from app.js and settings.js
 - **Color values are regex-validated on the backend**: `settings.py` validates `#hex`, `rgb()`, and `hsl()` patterns before storing. This prevents CSS injection via the `setProperty` calls in the frontend
-- **Section order is validated against an allowlist**: Only `["proxmox", "docker", "arr", "streaming"]` are accepted
+- **Section order is validated against an allowlist**: Only `["proxmox", "docker", "arr", "streaming", "uptime_kuma", "infrastructure"]` are accepted (2.0.0)
 - **Proxmox and arr use different client patterns but same principle**: Both reuse a module-level `httpx.AsyncClient`, closed in the lifespan shutdown. Proxmox client includes base_url and auth headers; arr client is generic.
 - **Docker stats concurrency is already correct**: `docker_int.py` uses `asyncio.gather` with `asyncio.to_thread` per container — they run in parallel, not sequentially. No need to refactor.
 - **Chat streaming uses a fast-path render**: During streaming, only the last message's `textContent` is updated (no innerHTML rebuild). Full rebuild happens only when a new message is added.
@@ -309,12 +322,17 @@ These are deliberate choices made during development. Don't revert without discu
 - **Instance secrets are masked and preserved on update**: `_mask_instance_config()` masks `token_value` in GET responses. On PUT, the merge logic starts from the existing config and overlays user changes, skipping masked values to preserve the original secret.
 - **Short-lived clients for additional instances**: Additional Proxmox instances use temporary `httpx.AsyncClient` per fetch (closed after use). Docker instances close via `asyncio.to_thread(client.close)`. Only the default Proxmox instance uses a persistent module-level client.
 - **DOCKER_URL is distinct from the Docker socket**: `DOCKER_URL` provides the base URL for building clickable container links in the UI (e.g., `http://192.168.1.50`). It has nothing to do with the Docker API connection, which uses the mounted socket.
+- **Claude chat uses AsyncAnthropic** (2.0.0): `claude_chat.py` uses `anthropic.AsyncAnthropic`, not the blocking `Anthropic` client, so `messages.create`/`stream` don't stall the event loop. The streaming iterator is `async for`.
+- **Container update checks are rate-capped** (2.0.0): `docker_updates.py` caches registry digest comparisons for 6 hours (matching Docker Hub's unauthenticated window) and limits uncached lookups to `MAX_CHECKS_PER_CYCLE` (=3) per refresh. Unknown state is represented as `update_available: None` so the frontend suppresses the badge rather than showing a false negative.
+- **`DASHBOARD_REQUIRE_AUTH` defaults to false** (2.0.0): Dashboard read endpoints stay publicly accessible by default for backward compatibility with 1.x deployments. Operators opt in to locking them down; JWT or `X-API-Key` are accepted when enabled.
+- **API keys use prefix + bcrypt** (2.0.0): Keys are `hp_<24 base64url chars>`. The 11-char prefix is indexed in SQLite for fast candidate lookup; bcrypt-verify then confirms the match. The prefix alone cannot authenticate. Plaintext is returned only once at creation; `revoked_at` is a soft-delete flag.
+- **Live preview is client-only** (2.0.0): `settings.js` applies CSS-var changes via `setProperty` on input events and reverts to the last-saved snapshot when the overlay is closed without Save. Server-side validation still runs on every PUT.
 
 ## Known Deferred Items
 
 These were identified but intentionally deferred — not forgotten:
 
-- **No rate limiting on login**: Brute force is possible. Would need `slowapi` or similar middleware. Low risk on a LAN-only homelab.
 - **No CSRF protection**: State-changing endpoints (PUT/DELETE) don't use CSRF tokens. Low risk since CORS restricts origins and JWT is in Authorization header (not cookies).
 - **Streaming session code duplication**: `arr.py` has similar fetch/parse patterns for Jellyfin, Plex, and Tautulli (~150 lines). Could be consolidated but works correctly as-is.
-- **Settings singleton doesn't hot-reload DB overrides**: After changing service configs via the admin panel, the `settings` object in `config.py` still holds the old values until restart. This is documented in the admin panel ("Restart to apply").
+- **Notification auto-triggers**: The notifications framework (Telegram) is wired through `/api/notifications/test` but there's no background checker that fires alerts on service outages, full NAS, or expiring certs. Planned as a 2.1 feature.
+- **Private-registry auth for update checks**: `docker_updates.py` uses the Docker daemon's default auth chain. No `REGISTRY_AUTH_JSON` override yet. Revisit if users report rate-limit or private-registry pain.

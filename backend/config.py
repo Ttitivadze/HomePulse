@@ -84,16 +84,66 @@ class Settings:
         self.TAUTULLI_URL: str = _get("TAUTULLI_URL").rstrip("/")
         self.TAUTULLI_API_KEY: str = _get("TAUTULLI_API_KEY")
 
-        # OpenClaw
-        self.OPENCLAW_URL: str = _get("OPENCLAW_URL").rstrip("/")
-        self.OPENCLAW_API_KEY: str = _get("OPENCLAW_API_KEY")
-        self.OPENCLAW_MODEL: str = _get("OPENCLAW_MODEL", "default")
+        # Claude
+        self.CLAUDE_API_KEY: str = _get("CLAUDE_API_KEY")
+        self.CLAUDE_MODEL: str = _get("CLAUDE_MODEL", "claude-sonnet-4-5")
+
+        # Uptime Kuma
+        self.UPTIME_KUMA_URL: str = _get("UPTIME_KUMA_URL").rstrip("/")
+        # Optional: when set, enables per-monitor status via Uptime Kuma's
+        # Prometheus /metrics endpoint. The token is the API key issued
+        # from Uptime Kuma's Settings > API Keys page; the basic-auth
+        # username can be any non-empty string.
+        self.UPTIME_KUMA_METRICS_TOKEN: str = _get("UPTIME_KUMA_METRICS_TOKEN")
+
+        # Infrastructure (NPM for SSL certs)
+        self.NPM_URL: str = _get("NPM_URL").rstrip("/")
+        self.NPM_API_TOKEN: str = _get("NPM_API_TOKEN")
+
+        # NAS / external storage mounts. Comma-separated list of
+        # filesystem paths visible inside the HomePulse container that
+        # should be shown alongside Proxmox storages in the
+        # Infrastructure widget. Each path is read via os.statvfs so
+        # accuracy matches `df`. Empty by default.
+        raw_nas = _get("NAS_MOUNTS", "")
+        self.NAS_MOUNTS: list[str] = [p.strip() for p in raw_nas.split(",") if p.strip()]
+
+        # Notifications
+        self.TELEGRAM_BOT_TOKEN: str = _get("TELEGRAM_BOT_TOKEN")
+        self.TELEGRAM_CHAT_ID: str = _get("TELEGRAM_CHAT_ID")
 
         # Dashboard
         raw_interval = _get("REFRESH_INTERVAL", "30")
         self.REFRESH_INTERVAL, warn = _safe_int(raw_interval, 30, "REFRESH_INTERVAL")
         if warn:
             self.warnings.append(warn)
+
+        # When true, the dashboard and per-section read endpoints require
+        # either a JWT or a valid X-API-Key header. Default false for
+        # backward compatibility with pre-2.0 behaviour (dashboard public).
+        self.DASHBOARD_REQUIRE_AUTH: bool = (
+            _get("DASHBOARD_REQUIRE_AUTH", "false").lower() == "true"
+        )
+
+        # Registry authentication for container update checks.
+        # REGISTRY_AUTH_JSON is expected to be a JSON object of the form:
+        #   {"ghcr.io": {"username": "...", "password": "..."},
+        #    "docker.io": {"username": "...", "password": "..."}}
+        # Empty by default — public images work with no auth.
+        self.REGISTRY_AUTH: dict = {}
+        raw_registry_auth = _get("REGISTRY_AUTH_JSON", "")
+        if raw_registry_auth:
+            try:
+                import json
+                parsed = json.loads(raw_registry_auth)
+                if isinstance(parsed, dict):
+                    self.REGISTRY_AUTH = parsed
+                else:
+                    self.warnings.append(
+                        "REGISTRY_AUTH_JSON must be a JSON object; ignoring"
+                    )
+            except Exception as e:
+                self.warnings.append(f"Failed to parse REGISTRY_AUTH_JSON: {e}")
 
         # Display config from YAML (section toggles, labels)
         self.DISPLAY: dict = {}
@@ -114,6 +164,10 @@ class Settings:
                     return
                 except Exception as e:
                     self.warnings.append(f"Failed to parse {candidate}: {e}")
+
+    def reload(self):
+        """Reload settings from DB overrides, env vars, and YAML."""
+        self.__init__()
 
     def _validate(self):
         """Warn about common misconfigurations at startup."""
@@ -137,6 +191,11 @@ class Settings:
     def docker_labels(self) -> dict:
         """Friendly names for Docker containers from config.yml."""
         return self.DISPLAY.get("docker_labels", {})
+
+    @property
+    def docker_links(self) -> dict:
+        """Custom URLs for Docker containers from config.yml."""
+        return self.DISPLAY.get("docker_links", {})
 
     @property
     def dashboard_title(self) -> str:
