@@ -35,7 +35,7 @@ VALID_FONTS = [
 ]
 
 VALID_DENSITIES = ["compact", "comfortable"]
-VALID_SECTIONS = ["proxmox", "docker", "arr", "streaming"]
+VALID_SECTIONS = ["proxmox", "docker", "arr", "streaming", "uptime_kuma", "infrastructure"]
 
 
 def _validate_color(value: str, field_name: str) -> None:
@@ -149,14 +149,18 @@ SERVICE_KEYS = [
     "JELLYFIN_URL", "JELLYFIN_API_KEY",
     "PLEX_URL", "PLEX_TOKEN",
     "TAUTULLI_URL", "TAUTULLI_API_KEY",
-    "OPENCLAW_URL", "OPENCLAW_API_KEY", "OPENCLAW_MODEL",
+    "CLAUDE_API_KEY", "CLAUDE_MODEL",
+    "UPTIME_KUMA_URL",
+    "NPM_URL", "NPM_API_TOKEN",
+    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "REFRESH_INTERVAL",
 ]
 
 # Keys whose values should be masked in GET responses
 SECRET_KEYS = {
     "PROXMOX_TOKEN_VALUE", "RADARR_API_KEY", "SONARR_API_KEY", "LIDARR_API_KEY",
-    "JELLYFIN_API_KEY", "PLEX_TOKEN", "TAUTULLI_API_KEY", "OPENCLAW_API_KEY",
+    "JELLYFIN_API_KEY", "PLEX_TOKEN", "TAUTULLI_API_KEY", "CLAUDE_API_KEY",
+    "NPM_API_TOKEN", "TELEGRAM_BOT_TOKEN",
 }
 
 
@@ -204,7 +208,10 @@ async def update_service_configs(
                 "ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP",
                 (key, value, value),
             )
-    logger.info("Service configs updated by %s", admin["username"])
+    # Hot-reload settings so changes take effect without restart
+    from backend.config import settings as _settings
+    _settings.reload()
+    logger.info("Service configs updated by %s (settings reloaded)", admin["username"])
     return {"status": "updated"}
 
 
