@@ -219,6 +219,7 @@
           <button class="settings-tab active" data-tab="ui">Appearance</button>
           <button class="settings-tab" data-tab="services">Services</button>
           <button class="settings-tab" data-tab="users">Accounts</button>
+          <button class="settings-tab" data-tab="api-keys">API Keys</button>
         </div>
 
         <!-- UI Tab -->
@@ -299,6 +300,22 @@
             <label class="density-option"><input type="checkbox" id="new-is-admin"> Admin privileges</label>
           </div>
           <button id="add-user-btn" class="settings-save-btn">Create User</button>
+        </div>
+
+        <!-- API Keys Tab -->
+        <div id="tab-api-keys" class="settings-tab-content">
+          <p class="settings-help">External tools can authenticate with HomePulse using an API key
+          instead of a user login. Keys grant read-only access when
+          <code>DASHBOARD_REQUIRE_AUTH=true</code>. Plaintext keys are
+          displayed only once — copy them before closing the notice.</p>
+          <div id="api-keys-list"></div>
+          <h3 style="margin-top:20px">Create Key</h3>
+          <div class="settings-form-group">
+            <label>Name</label>
+            <input type="text" id="new-api-key-name" class="settings-input" placeholder="e.g. Home Assistant" autocomplete="off">
+          </div>
+          <button id="create-api-key-btn" class="settings-save-btn">Create API Key</button>
+          <div id="new-api-key-banner" class="api-key-banner hidden"></div>
         </div>
       </div>
     </div>

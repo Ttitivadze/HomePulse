@@ -28,6 +28,7 @@ const Settings = {
     document.getElementById('ui-reset').addEventListener('click', () => this.resetUI());
     document.getElementById('services-save').addEventListener('click', () => this.saveServices());
     document.getElementById('add-user-btn').addEventListener('click', () => this.addUser());
+    document.getElementById('create-api-key-btn').addEventListener('click', () => this.createApiKey());
 
     // Tab switching
     document.querySelectorAll('.settings-tab').forEach(tab => {
@@ -45,6 +46,8 @@ const Settings = {
       if (delInst) { this.deleteInstance(parseInt(delInst.dataset.deleteInstance, 10)); return; }
       const delUser = e.target.closest('[data-delete-user]');
       if (delUser) { this.deleteUser(parseInt(delUser.dataset.deleteUser, 10)); return; }
+      const revokeKey = e.target.closest('[data-revoke-api-key]');
+      if (revokeKey) { this.revokeApiKey(parseInt(revokeKey.dataset.revokeApiKey, 10)); return; }
     });
   },
 
@@ -227,6 +230,7 @@ const Settings = {
 
     if (tabName === 'services') this.loadServices();
     if (tabName === 'users') this.loadUsers();
+    if (tabName === 'api-keys') this.loadApiKeys();
   },
 
   // ── UI Tab ──────────────────────────────────────────────────
@@ -696,6 +700,85 @@ const Settings = {
       await Auth.apiJson(`/api/settings/users/${userId}`, { method: 'DELETE' });
       this.showToast(`User '${username}' deleted`);
       this.loadUsers();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  // ── API Keys Tab ────────────────────────────────────────────
+
+  async loadApiKeys() {
+    const container = document.getElementById('api-keys-list');
+    container.innerHTML = '<div class="loading-skeleton" style="height:120px"></div>';
+    try {
+      const keys = await Auth.apiJson('/api/settings/api-keys');
+      if (!keys.length) {
+        container.innerHTML = '<div class="settings-help">No API keys yet.</div>';
+        return;
+      }
+      let html = '<table class="users-table"><thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last Used</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+      for (const k of keys) {
+        const status = k.revoked_at
+          ? '<span class="role-badge">Revoked</span>'
+          : '<span class="role-badge admin">Active</span>';
+        const created = k.created_at ? new Date(k.created_at).toLocaleDateString() : '-';
+        const lastUsed = k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never';
+        const actions = k.revoked_at
+          ? '<span class="text-muted">—</span>'
+          : `<button class="user-action-btn danger" data-revoke-api-key="${k.id}" title="Revoke key">Revoke</button>`;
+        html += `<tr>
+          <td>${this._escHtml(k.name)}</td>
+          <td><code>${this._escHtml(k.key_prefix)}...</code></td>
+          <td>${created}</td>
+          <td>${this._escHtml(lastUsed)}</td>
+          <td>${status}</td>
+          <td class="user-actions">${actions}</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div class="settings-error">${this._escHtml(e.message)}</div>`;
+    }
+  },
+
+  async createApiKey() {
+    const nameEl = document.getElementById('new-api-key-name');
+    const name = nameEl.value.trim();
+    if (!name) {
+      this.showToast('Name is required', true);
+      return;
+    }
+    try {
+      const data = await Auth.apiJson('/api/settings/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      nameEl.value = '';
+      this._showNewApiKey(data.name, data.key);
+      this.loadApiKeys();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  _showNewApiKey(name, key) {
+    const banner = document.getElementById('new-api-key-banner');
+    if (!banner) return;
+    banner.classList.remove('hidden');
+    banner.innerHTML = `
+      <strong>API key for "${this._escHtml(name)}" — copy now, it will not be shown again:</strong>
+      <div class="api-key-value"><code>${this._escHtml(key)}</code></div>
+      <div class="settings-help" style="margin-top:6px">Use with: <code>curl -H "X-API-Key: ${this._escHtml(key)}" /api/dashboard</code></div>`;
+  },
+
+  async revokeApiKey(keyId) {
+    if (!confirm('Revoke this API key? Any tool using it will stop working immediately.')) return;
+    try {
+      await Auth.apiJson(`/api/settings/api-keys/${keyId}`, { method: 'DELETE' });
+      this.showToast('API key revoked');
+      this.loadApiKeys();
     } catch (e) {
       this.showToast(e.message, true);
     }

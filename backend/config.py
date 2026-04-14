@@ -105,6 +105,13 @@ class Settings:
         if warn:
             self.warnings.append(warn)
 
+        # When true, the dashboard and per-section read endpoints require
+        # either a JWT or a valid X-API-Key header. Default false for
+        # backward compatibility with pre-2.0 behaviour (dashboard public).
+        self.DASHBOARD_REQUIRE_AUTH: bool = (
+            _get("DASHBOARD_REQUIRE_AUTH", "false").lower() == "true"
+        )
+
         # Display config from YAML (section toggles, labels)
         self.DISPLAY: dict = {}
         self._load_display_config()

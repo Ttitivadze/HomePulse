@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -24,6 +24,7 @@ from backend.integrations.uptime_kuma import router as uptime_kuma_router, fetch
 from backend.integrations.infrastructure import router as infra_router, fetch_infrastructure_data
 from backend.integrations.settings import router as settings_router
 from backend.notifications import router as notifications_router
+from backend.integrations.api_keys import router as api_keys_router, require_api_key_or_jwt
 from backend.auth import router as auth_router
 from backend.config import settings
 
@@ -118,6 +119,26 @@ app.include_router(infra_router, prefix="/api/infrastructure", tags=["infrastruc
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
+app.include_router(api_keys_router, prefix="/api/settings/api-keys", tags=["api-keys"])
+
+
+# Conditional auth gate for /api/dashboard and per-section read endpoints.
+# When DASHBOARD_REQUIRE_AUTH=true, require either a JWT or X-API-Key;
+# otherwise pass through anonymously (v1.x backward-compatible default).
+async def optional_dashboard_auth(
+    request: Request,
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+):
+    if not settings.DASHBOARD_REQUIRE_AUTH:
+        return None
+    # Delegate to the real auth check. We re-dispatch manually so the flag
+    # short-circuit doesn't force Depends() wiring into every endpoint.
+    from fastapi.security import HTTPAuthorizationCredentials
+    creds = None
+    if authorization and authorization.lower().startswith("bearer "):
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=authorization[7:])
+    return await require_api_key_or_jwt(request=request, x_api_key=x_api_key, creds=creds)
 
 # Static files
 static_dir = Path(__file__).parent / "static"
@@ -139,7 +160,7 @@ async def health():
 
 
 @app.get("/api/dashboard")
-async def dashboard():
+async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
     """Fetch all dashboard sections concurrently in a single request."""
     results = await asyncio.gather(
         fetch_all_proxmox_data(),
