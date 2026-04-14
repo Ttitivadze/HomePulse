@@ -28,7 +28,7 @@ import secrets
 from datetime import datetime, timezone
 
 import bcrypt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
@@ -151,7 +151,10 @@ async def create_key(req: CreateKeyRequest, admin: dict = Depends(require_admin)
 
 
 @router.delete("/{key_id}")
-async def revoke_key(key_id: int, admin: dict = Depends(require_admin)):
+async def revoke_key(
+    key_id: int = Path(..., ge=1),
+    admin: dict = Depends(require_admin),
+):
     """Revoke an API key (soft-delete via revoked_at)."""
     row = await db.fetch_one("SELECT id FROM api_keys WHERE id = ? AND revoked_at IS NULL", (key_id,))
     if not row:

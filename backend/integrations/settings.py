@@ -5,7 +5,7 @@ import logging
 import re
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from backend import database as db
@@ -312,8 +312,8 @@ async def create_instance(
 
 @router.put("/instances/{instance_id}")
 async def update_instance(
-    instance_id: int,
     req: InstanceUpdate,
+    instance_id: int = Path(..., ge=1),
     admin: dict = Depends(require_admin),
 ):
     """Update a service instance. Admin only."""
@@ -346,7 +346,7 @@ async def update_instance(
 
 @router.delete("/instances/{instance_id}")
 async def delete_instance(
-    instance_id: int,
+    instance_id: int = Path(..., ge=1),
     admin: dict = Depends(require_admin),
 ):
     """Delete a service instance. Admin only."""
@@ -361,7 +361,7 @@ async def delete_instance(
 
 @router.post("/instances/{instance_id}/test")
 async def test_instance_connection(
-    instance_id: int,
+    instance_id: int = Path(..., ge=1),
     admin: dict = Depends(require_admin),
 ):
     """Test connectivity to a service instance. Admin only."""
@@ -426,7 +426,7 @@ async def create_user(
 
 @router.put("/users/{user_id}/admin")
 async def toggle_admin(
-    user_id: int,
+    user_id: int = Path(..., ge=1),
     admin: dict = Depends(require_admin),
 ):
     """Toggle admin status for a user. Cannot change own status. Admin only."""
@@ -449,8 +449,8 @@ class ResetPasswordRequest(BaseModel):
 
 @router.put("/users/{user_id}/password")
 async def reset_password(
-    user_id: int,
     req: ResetPasswordRequest,
+    user_id: int = Path(..., ge=1),
     admin: dict = Depends(require_admin),
 ):
     """Reset a user's password. Admin only."""
@@ -466,7 +466,7 @@ async def reset_password(
 
 @router.delete("/users/{user_id}")
 async def delete_user(
-    user_id: int,
+    user_id: int = Path(..., ge=1),
     admin: dict = Depends(require_admin),
 ):
     """Delete a user account. Cannot delete yourself. Admin only."""
