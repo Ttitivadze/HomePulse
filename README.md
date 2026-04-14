@@ -6,6 +6,18 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v1.2.0
+- **Multi-instance support** — Connect multiple Proxmox VE and Docker hosts, managed entirely through the admin panel with "Add Instance" buttons (no `.env` clutter)
+- **Docker card overhaul** — Removed image tag and port text; added clickable service link (opens container's web UI in a new tab); status badge moved to top-left
+- **Download queue filtering** — Media Library queue now only shows active (incomplete) downloads, with first 3 visible and a "Show More" expand button
+- **Proxmox open link** — "Open" button on Proxmox section to launch the web UI in a new tab
+- **New `DOCKER_URL` setting** — Base URL for building Docker container web links
+- **New DB table** `service_instances` — Stores additional Proxmox/Docker instances with JSON config blobs
+- **New API endpoints** — Full CRUD for `/api/settings/instances` (list, create, update, delete, test connectivity)
+- **Security**: Fix XSS in delete button handlers (switched to data-attribute event delegation)
+- **Reliability**: Proper async Docker client cleanup, improved Proxmox error logging, consistent HTTP 503 for service failures
+- **Tests**: 66 tests (up from 51)
+
 ### v1.1.2
 - **Performance**: Persistent httpx client for Proxmox (reuse TCP/TLS connections across fetches)
 - **Performance**: Persistent SQLite connection (eliminates per-query open/close overhead)
@@ -43,14 +55,15 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Features
 
-- **Proxmox VE** — Nodes, VMs, and LXC containers with live CPU/RAM bars and uptime
-- **Docker** — Every container with status, resource usage, ports, and friendly display names
-- **Media Library** — Radarr (movies), Sonarr (TV), Lidarr (music) showing downloaded, requested, and missing counts plus download queue progress
+- **Proxmox VE** — Nodes, VMs, and LXC containers with live CPU/RAM bars, uptime, and a link to open the Proxmox web UI. Supports multiple independent Proxmox environments.
+- **Docker** — Every container with status, resource usage, clickable service links, and friendly display names. Supports multiple Docker hosts (local socket + remote TCP).
+- **Media Library** — Radarr (movies), Sonarr (TV), Lidarr (music) showing downloaded, requested, and missing counts plus active download queue (completed items filtered out, first 3 shown with expand)
 - **Active Streams** — Jellyfin, Plex (direct), or Tautulli — see who's watching what, transcode status, and playback progress
 - **OpenClaw Chat** — Slide-out AI chat panel with streaming token display, connected to your self-hosted OpenClaw instance
+- **Multi-instance support** — Add multiple Proxmox and Docker hosts through the admin panel — no `.env` numbering needed
 - **Single-request refresh** — One API call fetches everything in parallel; 30-second auto-refresh cycle
 - **Per-section retry** — If one service is down, retry just that section without reloading
-- **Admin Settings** — Account system with UI customization (colors, fonts, layout) and web-based service config management
+- **Admin Settings** — Account system with UI customization (colors, fonts, layout), web-based service config management, and instance management
 - **Mobile-ready** — Responsive grid, dark theme, iOS home screen support
 
 ## Quick Start
@@ -78,6 +91,8 @@ All integrations are optional — configure only the services you use.
 | `PROXMOX_TOKEN_NAME` | API token name |
 | `PROXMOX_TOKEN_VALUE` | API token value |
 | `PROXMOX_VERIFY_SSL` | Verify SSL cert (`true`/`false`, default: `false`) |
+| **Docker** | |
+| `DOCKER_URL` | Base URL for container web links (e.g. `http://192.168.1.100`) |
 | **Radarr / Sonarr / Lidarr** | |
 | `RADARR_URL`, `RADARR_API_KEY` | Radarr instance |
 | `SONARR_URL`, `SONARR_API_KEY` | Sonarr instance |
@@ -158,9 +173,10 @@ backend/
     settings.py          # Admin settings (UI, services, users)
   static/
     index.html           # SPA shell
-    js/app.js            # Dashboard logic
+    js/utils.js          # Shared escapeHtml/escapeAttr utilities
+    js/app.js            # Dashboard logic (multi-instance rendering)
     js/auth.js           # Authentication (JWT token management)
-    js/settings.js       # Settings panel logic
+    js/settings.js       # Settings panel logic (instance management)
     css/style.css        # Dark theme with CSS custom properties
     css/settings.css     # Settings panel styles
 config/config.yml        # Display settings
@@ -191,6 +207,11 @@ tests/                   # pytest test suite
 | PUT | `/api/settings/ui` | Update UI settings (admin) |
 | GET | `/api/settings/services` | Get service configs (admin) |
 | PUT | `/api/settings/services` | Update service configs (admin) |
+| GET | `/api/settings/instances` | List service instances (admin) |
+| POST | `/api/settings/instances` | Create service instance (admin) |
+| PUT | `/api/settings/instances/{id}` | Update service instance (admin) |
+| DELETE | `/api/settings/instances/{id}` | Delete service instance (admin) |
+| POST | `/api/settings/instances/{id}/test` | Test instance connectivity (admin) |
 | GET | `/api/settings/users` | List users (admin) |
 | POST | `/api/settings/users` | Create user (admin) |
 
@@ -206,6 +227,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `1.2.0` — Multi-instance Proxmox/Docker, UI improvements, download queue filtering
 - `1.1.2` — Performance optimizations, mobile UX, code cleanup
 - `1.1.1` — Security hardening, input validation, XSS fixes
 - `1.1.0` — Account system, admin settings panel, UI customization
