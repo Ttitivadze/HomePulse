@@ -115,6 +115,7 @@ const Settings = {
       'streaming': 'streaming-content',
       'uptime_kuma': 'uptime-content',
       'infrastructure': 'infra-content',
+      'self_stats': 'self-content',
     };
     const sections = [];
     for (const key of order) {
@@ -249,7 +250,7 @@ const Settings = {
       r.checked = r.value === density;
     });
 
-    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming', 'uptime_kuma', 'infrastructure']);
+    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming', 'uptime_kuma', 'infrastructure', 'self_stats']);
     this._bindLivePreview();
     this._uiDirty = false;
     this._updatePreviewIndicator();
@@ -264,6 +265,7 @@ const Settings = {
       streaming: 'Active Streams',
       uptime_kuma: 'Uptime Monitoring',
       infrastructure: 'Infrastructure',
+      self_stats: 'HomePulse Host',
     };
     container.innerHTML = order.map((key, i) => `
       <div class="section-order-item" data-key="${this._escAttr(key)}">

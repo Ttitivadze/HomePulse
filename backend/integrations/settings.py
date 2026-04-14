@@ -35,7 +35,7 @@ VALID_FONTS = [
 ]
 
 VALID_DENSITIES = ["compact", "comfortable"]
-VALID_SECTIONS = ["proxmox", "docker", "arr", "streaming", "uptime_kuma", "infrastructure"]
+VALID_SECTIONS = ["proxmox", "docker", "arr", "streaming", "uptime_kuma", "infrastructure", "self_stats"]
 
 
 def _validate_color(value: str, field_name: str) -> None:

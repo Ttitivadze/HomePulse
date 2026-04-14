@@ -22,6 +22,7 @@ from backend.integrations.arr import (
 from backend.integrations.claude_chat import router as claude_router
 from backend.integrations.uptime_kuma import router as uptime_kuma_router, fetch_uptime_kuma_data
 from backend.integrations.infrastructure import router as infra_router, fetch_infrastructure_data
+from backend.integrations.self_stats import router as self_stats_router, fetch_self_stats_data
 from backend.integrations.settings import router as settings_router
 from backend.notifications import router as notifications_router
 from backend.integrations.api_keys import router as api_keys_router, require_api_key_or_jwt
@@ -130,6 +131,7 @@ app.include_router(arr_router, prefix="/api/arr", tags=["arr"])
 app.include_router(claude_router, prefix="/api/claude", tags=["claude"])
 app.include_router(uptime_kuma_router, prefix="/api/uptime-kuma", tags=["uptime-kuma"])
 app.include_router(infra_router, prefix="/api/infrastructure", tags=["infrastructure"])
+app.include_router(self_stats_router, prefix="/api/self-stats", tags=["self-stats"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
@@ -185,6 +187,7 @@ async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
         fetch_streaming_data(),
         fetch_uptime_kuma_data(),
         fetch_infrastructure_data(),
+        fetch_self_stats_data(),
         return_exceptions=True,
     )
 
@@ -194,7 +197,7 @@ async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
             return {"configured": False, "error": "Service unavailable"}
         return result
 
-    proxmox, docker, radarr, sonarr, lidarr, streaming, uptime_kuma, infrastructure = results
+    proxmox, docker, radarr, sonarr, lidarr, streaming, uptime_kuma, infrastructure, self_stats = results
 
     return {
         "proxmox": safe(proxmox),
@@ -205,5 +208,6 @@ async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
         "streaming": safe(streaming),
         "uptime_kuma": safe(uptime_kuma),
         "infrastructure": safe(infrastructure),
+        "self_stats": safe(self_stats),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

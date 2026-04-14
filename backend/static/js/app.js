@@ -79,6 +79,7 @@ const App = {
       this.safeRender('streaming-content', 'Streaming', 'streaming', () => this.renderStreaming(data.streaming));
       if (data.uptime_kuma) this.safeRender('uptime-content', 'Uptime', 'uptime', () => this.renderUptimeKuma(data.uptime_kuma));
       if (data.infrastructure) this.safeRender('infra-content', 'Infrastructure', 'infrastructure', () => this.renderInfrastructure(data.infrastructure));
+      if (data.self_stats) this.safeRender('self-content', 'HomePulse Host', 'self', () => this.renderSelfStats(data.self_stats));
       this.updateTimestamp(data.timestamp);
     } catch (e) {
       console.error('Dashboard load failed:', e);
@@ -869,6 +870,94 @@ const App = {
       const diffDays = Math.floor(diffHours / 24);
       return `${diffDays}d ago`;
     } catch { return isoStr; }
+  },
+
+  // ── HomePulse Self-monitoring ────────────────────────────────────
+
+  _formatDurationSeconds(s) {
+    if (s == null || isNaN(s)) return '-';
+    const secs = Math.floor(s);
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m`;
+    return `${secs}s`;
+  },
+
+  renderSelfStats(data) {
+    const container = document.getElementById('self-content');
+    const badge = document.getElementById('self-badge');
+    if (!container) return;
+
+    if (!data || !data.configured) {
+      container.innerHTML = this.notConfigured('Self-monitoring (no /proc access)');
+      if (badge) badge.textContent = '-';
+      return;
+    }
+
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const memPct = data.mem_percent;
+    const memColor = memPct == null
+      ? 'var(--text-secondary)'
+      : memPct >= 90 ? '#ef4444'
+      : memPct >= 70 ? '#eab308'
+      : '#22c55e';
+
+    // Load average normalised against cpu_count — >=1.0 means the CPU
+    // is at or past capacity on average.
+    const load1 = data.load_1;
+    const cpus = data.cpu_count || 1;
+    const loadPct = load1 != null ? Math.min(100, (load1 / cpus) * 100) : null;
+    const loadColor = loadPct == null
+      ? 'var(--text-secondary)'
+      : loadPct >= 100 ? '#ef4444'
+      : loadPct >= 70 ? '#eab308'
+      : '#22c55e';
+
+    if (badge) {
+      badge.textContent = memPct != null ? `${memPct}% RAM` : 'OK';
+      badge.style.background = memColor;
+    }
+
+    const memTotalFmt = data.mem_total ? this.formatBytes(data.mem_total) : '-';
+    const memUsedFmt = data.mem_used != null ? this.formatBytes(data.mem_used) : '-';
+    const rssFmt = data.process_rss != null ? this.formatBytes(data.process_rss) : '-';
+
+    container.innerHTML = `
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">Memory</span>
+            <span style="color:${memColor};font-weight:600">${memPct != null ? memPct + '%' : '-'}</span>
+          </div>
+          <div class="card-body">
+            <div class="resource-bar"><div class="resource-fill" style="width:${memPct || 0}%;background:${memColor}"></div></div>
+            <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px">${esc(memUsedFmt)} / ${esc(memTotalFmt)}</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">Load Average</span>
+            <span style="color:${loadColor};font-weight:600">${load1 != null ? load1.toFixed(2) : '-'}</span>
+          </div>
+          <div class="card-body" style="font-size:0.8rem;color:var(--text-secondary)">
+            1m/5m/15m: ${load1 != null ? load1.toFixed(2) : '-'} / ${data.load_5 != null ? data.load_5.toFixed(2) : '-'} / ${data.load_15 != null ? data.load_15.toFixed(2) : '-'}
+            &middot; ${cpus} CPU${cpus > 1 ? 's' : ''}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-name">Uptime</span>
+          </div>
+          <div class="card-body" style="font-size:0.8rem;color:var(--text-secondary)">
+            Host: ${esc(this._formatDurationSeconds(data.system_uptime_s))}<br>
+            Process: ${esc(this._formatDurationSeconds(data.process_uptime_s))}<br>
+            HomePulse RSS: ${esc(rssFmt)}
+          </div>
+        </div>
+      </div>`;
   },
 };
 
