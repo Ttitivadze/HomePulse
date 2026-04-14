@@ -464,6 +464,97 @@ body {
   margin-bottom: 4px;
 }
 
+/* ---- Docker Card Link ---- */
+.card-name-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  margin-left: 6px;
+  opacity: 0.6;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.card-link:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* ---- Multi-Instance Groups ---- */
+.instance-group {
+  margin-bottom: 20px;
+}
+
+.instance-group:last-child {
+  margin-bottom: 0;
+}
+
+.instance-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.instance-badge {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ---- Section Open Button ---- */
+.section-open-btn {
+  display: inline-block;
+  padding: 5px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.section-open-btn:hover {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.25);
+}
+
+/* ---- Queue Expand ---- */
+.queue-expand-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.queue-expand-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
 /* ---- Streaming Sessions ---- */
 .stream-card {
   background: var(--bg-card);

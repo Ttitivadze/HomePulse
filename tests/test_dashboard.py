@@ -5,19 +5,19 @@ from unittest.mock import patch, AsyncMock
 @pytest.mark.asyncio
 async def test_dashboard_aggregates_all_sections(async_client):
     """The /api/dashboard endpoint should return all sections with a timestamp."""
-    mock_proxmox = {"configured": False, "nodes": []}
-    mock_docker = {"configured": False, "containers": []}
+    mock_proxmox = {"configured": False, "instances": []}
+    mock_docker = {"configured": False, "instances": []}
     mock_arr = {"configured": False}
     mock_streaming = {"configured": False}
 
     with (
         patch(
-            "backend.main.fetch_proxmox_data",
+            "backend.main.fetch_all_proxmox_data",
             new_callable=AsyncMock,
             return_value=mock_proxmox,
         ),
         patch(
-            "backend.main.fetch_docker_data",
+            "backend.main.fetch_all_docker_data",
             new_callable=AsyncMock,
             return_value=mock_docker,
         ),
@@ -61,14 +61,14 @@ async def test_dashboard_handles_exception_gracefully(async_client):
     """If a fetch function raises, the dashboard should still return 200."""
     with (
         patch(
-            "backend.main.fetch_proxmox_data",
+            "backend.main.fetch_all_proxmox_data",
             new_callable=AsyncMock,
             side_effect=RuntimeError("connection refused"),
         ),
         patch(
-            "backend.main.fetch_docker_data",
+            "backend.main.fetch_all_docker_data",
             new_callable=AsyncMock,
-            return_value={"configured": False, "containers": []},
+            return_value={"configured": False, "instances": []},
         ),
         patch(
             "backend.main.fetch_radarr_data",

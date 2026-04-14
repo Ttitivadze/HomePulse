@@ -142,6 +142,7 @@ async def reset_ui_settings(admin: dict = Depends(require_admin)):
 # Services manageable via the web UI
 SERVICE_KEYS = [
     "PROXMOX_HOST", "PROXMOX_USER", "PROXMOX_TOKEN_NAME", "PROXMOX_TOKEN_VALUE", "PROXMOX_VERIFY_SSL",
+    "DOCKER_URL",
     "RADARR_URL", "RADARR_API_KEY",
     "SONARR_URL", "SONARR_API_KEY",
     "LIDARR_URL", "LIDARR_API_KEY",
@@ -221,6 +222,150 @@ async def test_service_connection(
     url = row["value"] if row else ""
     if not url:
         return {"status": "not_configured", "message": "URL not set"}
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            resp = await client.get(url)
+            return {"status": "ok", "code": resp.status_code}
+    except httpx.ConnectError:
+        return {"status": "error", "message": "Connection refused"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ── Service Instances (multi-instance Proxmox / Docker) ─────────
+
+VALID_INSTANCE_TYPES = {"proxmox", "docker"}
+
+# Secret keys inside instance config JSON blobs
+_INSTANCE_SECRET_KEYS = {"token_value"}
+
+
+class InstanceCreate(BaseModel):
+    service_type: str = Field(..., max_length=20)
+    instance_name: str = Field(..., min_length=1, max_length=50)
+    config: dict = Field(default_factory=dict)
+
+
+class InstanceUpdate(BaseModel):
+    instance_name: str | None = Field(None, min_length=1, max_length=50)
+    config: dict | None = None
+
+
+def _mask_instance_config(config: dict) -> dict:
+    """Return a copy of instance config with secret values masked."""
+    masked = dict(config)
+    for key in _INSTANCE_SECRET_KEYS:
+        if key in masked and masked[key]:
+            masked[key] = "••••••••"
+    return masked
+
+
+@router.get("/instances")
+async def list_instances(admin: dict = Depends(require_admin)):
+    """List all additional service instances. Admin only."""
+    rows = await db.fetch_all(
+        "SELECT id, service_type, instance_name, config, created_at FROM service_instances ORDER BY created_at"
+    )
+    result = []
+    for r in rows:
+        config = json.loads(r["config"]) if isinstance(r["config"], str) else r["config"]
+        result.append({
+            "id": r["id"],
+            "service_type": r["service_type"],
+            "instance_name": r["instance_name"],
+            "config": _mask_instance_config(config),
+            "created_at": r["created_at"],
+        })
+    return result
+
+
+@router.post("/instances")
+async def create_instance(
+    req: InstanceCreate,
+    admin: dict = Depends(require_admin),
+):
+    """Create a new service instance. Admin only."""
+    if req.service_type not in VALID_INSTANCE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid service type. Choose from: {sorted(VALID_INSTANCE_TYPES)}")
+
+    if req.service_type == "proxmox" and not req.config.get("host"):
+        raise HTTPException(status_code=400, detail="Proxmox instance requires 'host' in config")
+    if req.service_type == "docker" and not req.config.get("host"):
+        raise HTTPException(status_code=400, detail="Docker instance requires 'host' in config")
+
+    config_json = json.dumps(req.config)
+    instance_id = await db.execute_returning_id(
+        "INSERT INTO service_instances (service_type, instance_name, config) VALUES (?, ?, ?)",
+        (req.service_type, req.instance_name, config_json),
+    )
+    logger.info("Instance '%s' (%s) created by %s", req.instance_name, req.service_type, admin["username"])
+    return {"id": instance_id, "service_type": req.service_type, "instance_name": req.instance_name}
+
+
+@router.put("/instances/{instance_id}")
+async def update_instance(
+    instance_id: int,
+    req: InstanceUpdate,
+    admin: dict = Depends(require_admin),
+):
+    """Update a service instance. Admin only."""
+    row = await db.fetch_one("SELECT * FROM service_instances WHERE id = ?", (instance_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    if req.instance_name is not None:
+        await db.execute(
+            "UPDATE service_instances SET instance_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (req.instance_name, instance_id),
+        )
+
+    if req.config is not None:
+        # Start from existing config, overlay user changes, preserve masked secrets
+        existing_config = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
+        merged = dict(existing_config)
+        for key, value in req.config.items():
+            if key in _INSTANCE_SECRET_KEYS and value == "••••••••":
+                continue  # Preserve existing secret
+            merged[key] = value
+        await db.execute(
+            "UPDATE service_instances SET config = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (json.dumps(merged), instance_id),
+        )
+
+    logger.info("Instance %d updated by %s", instance_id, admin["username"])
+    return {"status": "updated"}
+
+
+@router.delete("/instances/{instance_id}")
+async def delete_instance(
+    instance_id: int,
+    admin: dict = Depends(require_admin),
+):
+    """Delete a service instance. Admin only."""
+    row = await db.fetch_one("SELECT id FROM service_instances WHERE id = ?", (instance_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    await db.execute("DELETE FROM service_instances WHERE id = ?", (instance_id,))
+    logger.info("Instance %d deleted by %s", instance_id, admin["username"])
+    return {"status": "deleted"}
+
+
+@router.post("/instances/{instance_id}/test")
+async def test_instance_connection(
+    instance_id: int,
+    admin: dict = Depends(require_admin),
+):
+    """Test connectivity to a service instance. Admin only."""
+    row = await db.fetch_one("SELECT * FROM service_instances WHERE id = ?", (instance_id,))
+    if not row:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    config = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
+    url = config.get("host", "")
+    if not url:
+        return {"status": "not_configured", "message": "Host not set"}
 
     try:
         async with httpx.AsyncClient(timeout=5.0, verify=False) as client:

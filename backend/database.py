@@ -69,6 +69,17 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS service_instances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_type TEXT NOT NULL,
+            instance_name TEXT NOT NULL,
+            config TEXT NOT NULL DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_service_instances_type ON service_instances(service_type);
+
         -- Ensure exactly one UI settings row exists
         INSERT OR IGNORE INTO ui_settings (id) VALUES (1);
     """)
