@@ -1,12 +1,62 @@
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
+from backend.integrations import arr
 from backend.integrations.arr import (
     fetch_radarr_data,
     fetch_sonarr_data,
     fetch_lidarr_data,
     fetch_streaming_data,
 )
+
+
+# ── Helper unit tests (refactored in 2.0.0) ──────────────────────
+
+
+def test_session_helper_fills_defaults():
+    s = arr._session("Jellyfin")
+    assert s["source"] == "Jellyfin"
+    assert s["user"] == "Unknown"
+    assert s["title"] == "Unknown"
+    assert s["media_type"] == "unknown"
+    assert s["state"] == "unknown"
+    assert s["progress"] == 0
+    assert s["transcode"] == "direct play"
+
+
+def test_session_helper_lowercases_media_type():
+    s = arr._session("Plex", media_type="Episode")
+    assert s["media_type"] == "episode"
+
+
+def test_session_helper_skips_none_values():
+    # None should fall back to the default rather than clobbering it.
+    s = arr._session("Plex", user=None, title=None)
+    assert s["user"] == "Unknown"
+    assert s["title"] == "Unknown"
+
+
+def test_episode_title_with_full_info():
+    assert arr._episode_title("Foo", 1, 2, "Pilot") == "Foo - S01E02 - Pilot"
+
+
+def test_episode_title_missing_series_returns_item_title():
+    assert arr._episode_title(None, 1, 2, "Movie Name") == "Movie Name"
+
+
+def test_episode_title_handles_non_numeric_index():
+    assert arr._episode_title("Show", None, None, "Special") == "Show - Special"
+    assert arr._episode_title("Show", "not", "numbers", "Special") == "Show - Special"
+
+
+def test_progress_pct_zero_total():
+    assert arr._progress_pct(10, 0) == 0
+    assert arr._progress_pct(10, None) == 0
+
+
+def test_progress_pct_normal():
+    assert arr._progress_pct(50, 100) == 50.0
+    assert arr._progress_pct(25, 100) == 25.0
 
 
 @pytest.mark.asyncio
