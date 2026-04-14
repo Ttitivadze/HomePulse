@@ -147,7 +147,11 @@ const App = {
       container.innerHTML = this.notConfigured('Proxmox', 'Set PROXMOX_HOST and API token in .env');
       return;
     }
-    container.innerHTML = data.nodes.map(node => this.renderNode(node)).join('');
+    const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
+    const openBtn = data.url
+      ? `<a href="${escAttr(data.url)}" target="_blank" rel="noopener" class="section-open-btn" title="Open Proxmox">Open &#8599;</a>`
+      : '';
+    container.innerHTML = openBtn + data.nodes.map(node => this.renderNode(node)).join('');
   },
 
   renderNode(node) {
@@ -220,24 +224,33 @@ const App = {
       badge.textContent = '0';
       return;
     }
+    const hostUrl = data.host_url || '';
     const running = data.containers.filter(c => c.status === 'running').length;
     badge.textContent = `${running}/${data.containers.length}`;
-    container.innerHTML = `<div class="card-grid">${data.containers.map(c => this.renderDockerCard(c)).join('')}</div>`;
+    container.innerHTML = `<div class="card-grid">${data.containers.map(c => this.renderDockerCard(c, hostUrl)).join('')}</div>`;
   },
 
-  renderDockerCard(c) {
+  renderDockerCard(c, hostUrl) {
     const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
     const memPercent = c.mem_limit > 0 ? Math.round((c.mem_usage / c.mem_limit) * 100) : 0;
-    const ports = c.ports.length ? `<div class="card-id" style="margin-top:4px">${c.ports.map(p => esc(p)).join(', ')}</div>` : '';
+
+    // Build link from first mapped host port
+    const firstHostPort = c.ports.length ? c.ports[0].split('->')[0] : null;
+    const baseUrl = hostUrl || ('http://' + window.location.hostname);
+    const linkUrl = firstHostPort ? `${baseUrl}:${firstHostPort}` : null;
+    const linkHtml = linkUrl
+      ? ` <a href="${escAttr(linkUrl)}" target="_blank" rel="noopener" class="card-link" title="Open in new tab">&#8599;</a>`
+      : '';
+
     return `
       <div class="card">
         <div class="card-header">
-          <div>
-            <div class="card-name">${esc(c.display_name || c.name)}</div>
-            <div class="card-id">${c.display_name && c.display_name !== c.name ? esc(c.name) + ' &middot; ' : ''}${esc(c.image)}</div>
-            ${ports}
-          </div>
           <span class="status-badge ${c.status}">${esc(c.status)}</span>
+          <div class="card-name-group">
+            <div class="card-name">${esc(c.display_name || c.name)}${linkHtml}</div>
+            ${c.display_name && c.display_name !== c.name ? `<div class="card-id">${esc(c.name)}</div>` : ''}
+          </div>
         </div>
         ${c.status === 'running' ? `
         <div class="card-stats">
@@ -286,28 +299,41 @@ const App = {
     }
     html += '</div>';
 
-    // Download queues
+    // Download queues — only show active (incomplete) downloads
     const allQueue = [
       ...(r?.queue || []).map(q => ({ ...q, source: 'Radarr' })),
       ...(s?.queue || []).map(q => ({ ...q, source: 'Sonarr' })),
       ...(l?.queue || []).map(q => ({ ...q, source: 'Lidarr' })),
     ];
+    const activeQueue = allQueue.filter(q => q.sizeleft > 0);
 
-    if (allQueue.length > 0) {
+    if (activeQueue.length > 0) {
       const esc = (s) => this.escapeHtml(String(s ?? ''));
+      const INITIAL_SHOW = 3;
+      const renderItem = (q) => `
+        <div class="queue-item">
+          <div class="queue-item-info">
+            <div class="queue-item-title">${esc(q.title)}</div>
+            <div class="queue-item-meta">${esc(q.source)} ${q.eta ? '&middot; ETA: ' + esc(q.eta) : ''}</div>
+          </div>
+          <div class="queue-item-progress">
+            <div class="queue-item-percent">${q.progress}%</div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${q.progress}%"></div></div>
+          </div>
+        </div>`;
+      const visible = activeQueue.slice(0, INITIAL_SHOW);
+      const hidden = activeQueue.slice(INITIAL_SHOW);
+
       html += `<div class="queue-section">
-        <div class="queue-title">Download Queue (${allQueue.length})</div>
-        ${allQueue.map(q => `
-          <div class="queue-item">
-            <div class="queue-item-info">
-              <div class="queue-item-title">${esc(q.title)}</div>
-              <div class="queue-item-meta">${esc(q.source)} ${q.eta ? '&middot; ETA: ' + esc(q.eta) : ''}</div>
-            </div>
-            <div class="queue-item-progress">
-              <div class="queue-item-percent">${q.progress}%</div>
-              <div class="progress-bar"><div class="progress-fill" style="width:${q.progress}%"></div></div>
-            </div>
-          </div>`).join('')}
+        <div class="queue-title">Download Queue (${activeQueue.length})</div>
+        ${visible.map(renderItem).join('')}
+        ${hidden.length > 0 ? `
+          <div class="queue-hidden" style="display:none">
+            ${hidden.map(renderItem).join('')}
+          </div>
+          <button class="queue-expand-btn" onclick="this.previousElementSibling.style.display='block';this.style.display='none'">
+            Show More (${hidden.length})
+          </button>` : ''}
       </div>`;
     }
 

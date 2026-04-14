@@ -73,7 +73,7 @@ async def fetch_docker_data() -> dict:
                 stats = {"cpu_percent": 0, "mem_usage": 0, "mem_limit": 0}
             info.update(stats)
 
-        return {"configured": True, "containers": container_info}
+        return {"configured": True, "containers": container_info, "host_url": settings.DOCKER_URL}
     except Exception as e:
         logger.exception("Docker fetch failed")
         return {"configured": True, "containers": [], "error": "Docker request failed"}

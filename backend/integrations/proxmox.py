@@ -110,7 +110,7 @@ async def fetch_proxmox_data() -> dict:
         )
         valid_nodes = [r for r in results if isinstance(r, dict)]
 
-        data = {"configured": True, "nodes": valid_nodes}
+        data = {"configured": True, "nodes": valid_nodes, "url": settings.PROXMOX_HOST}
         cache.put("proxmox", data)
         return data
 
