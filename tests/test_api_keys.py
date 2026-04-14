@@ -119,3 +119,13 @@ async def test_dashboard_public_when_flag_unset(init_db, async_client, monkeypat
     monkeypatch.setattr(settings, "DASHBOARD_REQUIRE_AUTH", False)
     resp = await async_client.get("/api/dashboard")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_revoke_rejects_zero_or_negative_ids(admin_token, async_client):
+    """Path(ge=1) blocks non-positive IDs with 422 before touching the DB."""
+    hdr = {"Authorization": f"Bearer {admin_token}"}
+    resp = await async_client.delete("/api/settings/api-keys/0", headers=hdr)
+    assert resp.status_code == 422
+    resp = await async_client.delete("/api/settings/api-keys/-1", headers=hdr)
+    assert resp.status_code == 422

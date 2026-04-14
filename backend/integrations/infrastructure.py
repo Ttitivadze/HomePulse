@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache
+from backend.cache import TTL
+from backend.integrations._status import ok, unconfigured
 
 logger = logging.getLogger("homepulse.infrastructure")
 
@@ -233,7 +235,7 @@ async def _fetch_ssl_data() -> list:
 
 async def fetch_infrastructure_data() -> dict:
     """Fetch all infrastructure data. Returns a dict; never raises."""
-    cached = cache.get("infrastructure", ttl=60)
+    cached = cache.get("infrastructure", ttl=TTL.INFRASTRUCTURE)
     if cached is not None:
         return cached
 
@@ -247,19 +249,21 @@ async def fetch_infrastructure_data() -> dict:
 
     storage_list = storage if isinstance(storage, list) else []
     nas_list = nas if isinstance(nas, list) else []
+    backups_list = backups if isinstance(backups, list) else []
+    ssl_list = ssl_certs if isinstance(ssl_certs, list) else []
 
-    data = {
-        "configured": True,
-        # NAS mounts appear first so operators see the most concrete
-        # "is my backup drive full?" signal at a glance.
-        "storage": nas_list + storage_list,
-        "backups": backups if isinstance(backups, list) else [],
-        "ssl_certs": ssl_certs if isinstance(ssl_certs, list) else [],
-    }
+    # NAS mounts appear first so operators see the most concrete
+    # "is my backup drive full?" signal at a glance.
+    merged_storage = nas_list + storage_list
 
-    # Not configured if all sections are empty
-    if not data["storage"] and not data["backups"] and not data["ssl_certs"]:
-        data["configured"] = False
+    if not merged_storage and not backups_list and not ssl_list:
+        data = unconfigured(storage=[], backups=[], ssl_certs=[])
+    else:
+        data = ok(
+            storage=merged_storage,
+            backups=backups_list,
+            ssl_certs=ssl_list,
+        )
 
     cache.put("infrastructure", data)
     return data

@@ -22,7 +22,7 @@ You are my development partner. Follow these principles at all times:
 
 ## Project Overview
 
-HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), and an embedded OpenClaw AI chat assistant. Includes a JWT-based account system with an admin settings panel for UI customization and service configuration management.
+HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Python/FastAPI backend with a vanilla JavaScript frontend that aggregates data from Proxmox, Docker, media services (Radarr/Sonarr/Lidarr), streaming sessions (Jellyfin/Plex/Tautulli), Uptime Kuma, infrastructure (storage/backups/SSL/NAS mounts), and an embedded Anthropic Claude AI chat assistant. Includes a JWT-based account system with an admin settings panel for UI customization, service configuration, and external API key management.
 
 ## Tech Stack
 
@@ -35,7 +35,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`) + SQLite overrides from admin panel
 - **Testing**: pytest + pytest-asyncio, httpx test client
 - **Logging**: Python `logging` module under the `homepulse.*` namespace
-- **Versioning**: Semantic versioning via `VERSION` file (currently 2.0.0)
+- **Versioning**: Semantic versioning via `VERSION` file (currently 2.1.0)
 
 ## Repository Structure
 
@@ -47,13 +47,16 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── database.py          # SQLite setup, schema, async query helpers
 │   ├── auth.py              # JWT auth, login/setup endpoints, password hashing
 │   ├── integrations/        # One module per external service
+│   │   ├── _status.py       # Shared ok()/failure()/unconfigured() envelope builders (2.1.0)
 │   │   ├── proxmox.py       # Proxmox VE API client (parallel node fetches)
 │   │   ├── docker_int.py    # Docker socket integration (parallel stats, display labels)
 │   │   ├── docker_updates.py # Registry digest comparison for container update badges
 │   │   ├── arr.py           # Radarr/Sonarr/Lidarr + streaming (Jellyfin/Plex/Tautulli)
 │   │   ├── claude_chat.py   # Anthropic Claude chat proxy (streaming SSE)
-│   │   ├── uptime_kuma.py   # Uptime Kuma status widget
-│   │   ├── infrastructure.py # Storage / backups / SSL cert monitoring
+│   │   ├── uptime_kuma.py   # Uptime Kuma reachability + Prometheus /metrics parser
+│   │   ├── infrastructure.py # Proxmox storage/backups/SSL certs + NAS_MOUNTS
+│   │   ├── self_stats.py    # HomePulse host CPU/RAM/uptime via /proc (2.1.0)
+│   │   ├── bookmarks.py     # App-launcher CRUD + public GET /api/bookmarks (2.1.0)
 │   │   ├── api_keys.py      # External API key issuing + X-API-Key verification
 │   │   └── settings.py      # Admin settings CRUD (UI prefs, services, users)
 │   ├── notifications.py     # Notification providers (Telegram) + /test endpoint
@@ -70,7 +73,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 ├── config/
 │   └── config.yml           # Dashboard display settings (section toggles, container labels)
 ├── data/                    # SQLite database (created at runtime, gitignored)
-├── tests/                   # pytest test suite (93 tests)
+├── tests/                   # pytest test suite (128 tests)
 │   ├── conftest.py          # Shared fixtures (async_client, cache clearing, test DB)
 │   ├── test_health.py       # Health + root endpoint tests
 │   ├── test_dashboard.py    # Aggregated dashboard endpoint tests
@@ -78,22 +81,29 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── test_proxmox.py      # Proxmox endpoint tests
 │   ├── test_docker.py       # Docker endpoint tests + docker_links regression
 │   ├── test_claude.py       # Claude chat status + configured/unconfigured paths
-│   ├── test_uptime_kuma.py  # Uptime Kuma configured/online/offline paths
-│   ├── test_infrastructure.py # Storage/backups/SSL graceful-degrade tests
+│   ├── test_uptime_kuma.py  # Uptime Kuma ping + Prometheus metrics parser
+│   ├── test_infrastructure.py # Storage/backups/SSL + NAS_MOUNTS statvfs
 │   ├── test_notifications.py # Telegram send + /test endpoint
 │   ├── test_rate_limit.py   # Login rate-limit (5 attempts / 60s / IP → 429)
-│   ├── test_api_keys.py     # API key CRUD + X-API-Key auth + gate flag
-│   ├── test_container_updates.py # Registry digest comparison + cache + rate-cap
+│   ├── test_api_keys.py     # API key CRUD + X-API-Key auth + Path(ge=1) gate
+│   ├── test_container_updates.py # Registry digest + cache + rate-cap + REGISTRY_AUTH_JSON
+│   ├── test_self_stats.py   # /proc parser + endpoint (2.1.0)
+│   ├── test_bookmarks.py    # Bookmarks CRUD + URL validator + dashboard include (2.1.0)
 │   ├── test_cache.py        # TTL cache unit tests
 │   ├── test_auth.py         # Auth system tests (setup, login, JWT, status)
 │   ├── test_settings.py     # Settings tests (UI, users, services, validation)
 │   └── test_instances.py    # Service instance CRUD tests (multi-instance)
-├── VERSION                  # Semantic version (2.0.0)
+├── .github/workflows/       # CI & release automation (2.1.0)
+│   ├── tests.yml            # pytest on push/PR against main
+│   └── docker-publish.yml   # Multi-arch image to ghcr.io on push + tag
+├── docs/
+│   └── POST_DEPLOY_SMOKE.md # Manual verification checklist
+├── VERSION                  # Semantic version (2.1.0)
 ├── LICENSE                  # MIT License
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, data, docs from Docker image
 ├── .gitignore               # Python, IDE, OS artifacts, data/
-├── Dockerfile               # Python 3.12-slim, healthcheck, non-root user, data dir
+├── Dockerfile               # Multi-stage (builder + runtime), non-root user
 ├── docker-compose.yml       # Port 8450->8000, named volume for SQLite, resource limits
 ├── requirements.txt         # Runtime dependencies (pinned versions)
 └── requirements-dev.txt     # Test dependencies (pytest, pytest-asyncio)
@@ -142,9 +152,14 @@ pytest tests/ -v
 | GET | `/api/arr/sonarr` | TV show stats + download queue |
 | GET | `/api/arr/lidarr` | Music library stats + download queue |
 | GET | `/api/arr/streaming` | Active streams (Jellyfin, Plex, and/or Tautulli) |
-| GET | `/api/openclaw/status` | OpenClaw connection check |
-| POST | `/api/openclaw/chat` | Chat message (JSON response) |
-| POST | `/api/openclaw/chat/stream` | Chat message (streaming SSE response) |
+| GET | `/api/claude/status` | Claude chat configured? |
+| POST | `/api/claude/chat` | Chat message (JSON response) |
+| POST | `/api/claude/chat/stream` | Chat message (streaming SSE response) |
+| GET | `/api/uptime-kuma/status` | Uptime Kuma reachability + per-monitor list |
+| GET | `/api/infrastructure/status` | Storage / backups / SSL certs / NAS mounts |
+| GET | `/api/self-stats/status` | HomePulse host CPU/RAM/uptime (2.1.0) |
+| GET | `/api/bookmarks` | Public list of admin-curated bookmarks (2.1.0) |
+| POST | `/api/notifications/test` | Send a test Telegram notification |
 
 ### Authentication
 
@@ -170,6 +185,13 @@ pytest tests/ -v
 | PUT | `/api/settings/users/{id}/admin` | Toggle admin status (admin) |
 | PUT | `/api/settings/users/{id}/password` | Reset a user's password (admin) |
 | DELETE | `/api/settings/users/{id}` | Delete a user (admin) |
+| GET | `/api/settings/bookmarks` | List bookmarks (admin, 2.1.0) |
+| POST | `/api/settings/bookmarks` | Create bookmark (admin, 2.1.0) |
+| PUT | `/api/settings/bookmarks/{id}` | Update bookmark (admin, 2.1.0) |
+| DELETE | `/api/settings/bookmarks/{id}` | Delete bookmark (admin, 2.1.0) |
+| GET | `/api/settings/api-keys` | List API keys (admin) |
+| POST | `/api/settings/api-keys` | Create API key — plaintext once (admin) |
+| DELETE | `/api/settings/api-keys/{id}` | Revoke API key (admin) |
 | GET | `/api/settings/instances` | List additional service instances (admin) |
 | POST | `/api/settings/instances` | Create a new service instance (admin) |
 | PUT | `/api/settings/instances/{id}` | Update a service instance (admin) |
@@ -193,7 +215,7 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **Async-first**: All endpoint handlers and HTTP calls are async (`async def`, `httpx.AsyncClient`)
 - **CORS enabled**: `CORSMiddleware` allows all origins with GET, POST, PUT, DELETE so the dashboard works from any LAN device
 - **Concurrent I/O**: `asyncio.gather` for parallel API calls within each integration; `asyncio.to_thread` for blocking Docker stats calls and SQLite operations
-- **Shared HTTP client**: `arr.py` maintains a module-level `httpx.AsyncClient` reused by arr + openclaw integrations (avoids per-request TCP/TLS overhead). Closed during app shutdown via the FastAPI lifespan.
+- **Shared HTTP client**: `arr.py` maintains a module-level `httpx.AsyncClient` reused by the arr integrations (avoids per-request TCP/TLS overhead). Closed during app shutdown via the FastAPI lifespan. Uptime Kuma and Infrastructure use their own short-lived clients per fetch because their request cadences differ significantly.
 - **TTL cache**: `backend/cache.py` provides a 15-second in-memory cache. Integration `fetch_*` functions check the cache before making external calls. This absorbs brief service outages and reduces redundant requests during the 30-second refresh cycle.
 - **Two-tier data functions**: Each integration exposes `fetch_*_data()` (returns a dict, never raises) and a router endpoint (raises `HTTPException` on error). The dashboard endpoint calls the `fetch_*` functions directly.
 - **Router-per-integration**: Each integration is a separate module with its own `APIRouter`, mounted in `main.py` with a prefix
@@ -212,10 +234,10 @@ The frontend uses `/api/dashboard` for the main 30-second refresh cycle. Individ
 - **No framework or bundler**: Plain ES6+ JavaScript with Fetch API
 - **Single-request refresh**: `loadDashboard()` calls `/api/dashboard` once per cycle; all data arrives in one response
 - **Per-section retry**: Error cards include a "Retry" button that re-fetches only the failed section via the individual endpoint
-- **Streaming chat**: The chat panel uses `/api/openclaw/chat/stream` (SSE) to display tokens as they arrive, with a non-streaming fallback
+- **Streaming chat**: The chat panel uses `/api/claude/chat/stream` (SSE) to display tokens as they arrive, with a non-streaming fallback
 - **Chat history trimming**: Only the last 50 messages are sent in each chat request to keep payloads bounded
 - **"Last updated" display**: Header shows relative timestamp ("Updated 5s ago") refreshed every 5 seconds
-- **OpenClaw status check**: The chat panel calls `/api/openclaw/status` on open and displays Online/Offline
+- **Claude status check**: The chat panel calls `/api/claude/status` on open and displays Online/Offline (Offline = no `CLAUDE_API_KEY` configured)
 - **Module pattern**: `App` object in `app.js`, `Auth` in `auth.js`, `Settings` in `settings.js`
 - **XSS prevention**: `escapeHtml()` for text content, `_escAttr()` for HTML attribute contexts (escapes quotes). Both used consistently in template literals.
 - **Settings panel**: Modal overlay with three tabs — Appearance (colors, font, density, section order), Services (API URLs/keys with test button), Accounts (create/delete users, toggle admin). First-run shows setup wizard.
@@ -276,7 +298,8 @@ Key patterns:
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
 
-- `2.0.0` — Major update: Claude chat (replaces OpenClaw), Uptime Kuma + Infrastructure widgets, Telegram notifications, login rate limiting, settings hot-reload, light-theme toggle, container update badges (frontend + registry-digest backend), live-preview of appearance settings, external API keys with X-API-Key auth, DASHBOARD_REQUIRE_AUTH gate (current)
+- `2.1.0` — Market-polish minor: bookmarks / app-launcher widget, HomePulse self-monitoring (CPU/RAM/uptime via /proc), PWA manifest + icons, multi-stage Dockerfile, GitHub Actions (pytest + multi-arch GHCR publish), shared error-return envelope across integrations, central cache TTL policy module, CORS tightening via ALLOWED_ORIGINS when DASHBOARD_REQUIRE_AUTH=true, Path(ge=1) validation on every {id} parameter, REGISTRY_AUTH_JSON for private-registry update checks, NAS_MOUNTS for local filesystem monitoring, OpenClaw doc scrub, README Quick Start rewrite (current)
+- `2.0.0` — Major update: Claude chat (replaces OpenClaw), Uptime Kuma + Infrastructure widgets, Telegram notifications, login rate limiting, settings hot-reload, light-theme toggle, container update badges (frontend + registry-digest backend), live-preview of appearance settings, external API keys with X-API-Key auth, DASHBOARD_REQUIRE_AUTH gate
 - `1.3.0` — Homelab-only pre-2.0.0 snapshot (never released on main): Claude/Uptime Kuma/Infra/Telegram/rate-limit/theme toggle landing ground
 - `1.2.4` — Cache-busting static assets, version display in header
 - `1.2.3` — Login form dismisses on successful auth, reopens straight into settings panel
@@ -313,7 +336,7 @@ These are deliberate choices made during development. Don't revert without discu
 - **Setup endpoint has TOCTOU protection**: `auth.py` wraps the INSERT in try/except to handle the race between the existence check and insert
 - **Two escape functions exist for a reason**: `escapeHtml()` for text content, `escapeAttr()` for HTML attribute contexts (escapes quotes). Both in `utils.js`, delegated from app.js and settings.js
 - **Color values are regex-validated on the backend**: `settings.py` validates `#hex`, `rgb()`, and `hsl()` patterns before storing. This prevents CSS injection via the `setProperty` calls in the frontend
-- **Section order is validated against an allowlist**: Only `["proxmox", "docker", "arr", "streaming", "uptime_kuma", "infrastructure"]` are accepted (2.0.0)
+- **Section order is validated against an allowlist**: Only `["proxmox", "docker", "arr", "streaming", "uptime_kuma", "infrastructure", "self_stats"]` are accepted (list extended in 2.1.0)
 - **Proxmox and arr use different client patterns but same principle**: Both reuse a module-level `httpx.AsyncClient`, closed in the lifespan shutdown. Proxmox client includes base_url and auth headers; arr client is generic.
 - **Docker stats concurrency is already correct**: `docker_int.py` uses `asyncio.gather` with `asyncio.to_thread` per container — they run in parallel, not sequentially. No need to refactor.
 - **Chat streaming uses a fast-path render**: During streaming, only the last message's `textContent` is updated (no innerHTML rebuild). Full rebuild happens only when a new message is added.
@@ -327,6 +350,13 @@ These are deliberate choices made during development. Don't revert without discu
 - **`DASHBOARD_REQUIRE_AUTH` defaults to false** (2.0.0): Dashboard read endpoints stay publicly accessible by default for backward compatibility with 1.x deployments. Operators opt in to locking them down; JWT or `X-API-Key` are accepted when enabled.
 - **API keys use prefix + bcrypt** (2.0.0): Keys are `hp_<24 base64url chars>`. The 11-char prefix is indexed in SQLite for fast candidate lookup; bcrypt-verify then confirms the match. The prefix alone cannot authenticate. Plaintext is returned only once at creation; `revoked_at` is a soft-delete flag.
 - **Live preview is client-only** (2.0.0): `settings.js` applies CSS-var changes via `setProperty` on input events and reverts to the last-saved snapshot when the overlay is closed without Save. Server-side validation still runs on every PUT.
+- **Integration return envelope is shared** (2.1.0): `backend/integrations/_status.py` exposes `ok()`, `failure()`, `unconfigured()` builders so every `fetch_*_data()` returns the same `{"configured": bool, "error": str | None, ...}` shape. Uptime Kuma intentionally keeps its own `status` enum because that's semantic state, not error-ness.
+- **Cache TTLs live in one place** (2.1.0): `backend.cache.TTL` exposes named constants (`DASHBOARD`, `DOCKER_STATS`, `UPTIME_KUMA`, `INFRASTRUCTURE`, `REGISTRY_UPDATE`). Ad-hoc numeric TTLs are a smell — add a named constant instead.
+- **Bookmark URLs are allow-list validated** (2.1.0): server and client both check `^(https?|mailto):` before persisting or rendering. `javascript:` / `data:` / `file:` would be an XSS vector via `<a href>` regardless of attribute escaping because the browser executes those schemes on click.
+- **Self-monitoring reads /proc directly** (2.1.0): no psutil dependency; on non-Linux hosts the module returns `configured=False` and degrades gracefully instead of crashing. TTL.DASHBOARD (15 s) caches the reads to match the refresh cycle.
+- **CORS is bimodal** (2.1.0): default `allow_origins=["*"]` stays for pre-2.0 LAN convenience; when `DASHBOARD_REQUIRE_AUTH=true` it narrows to `settings.ALLOWED_ORIGINS` (empty = same-origin). `allow_credentials=False` explicitly — HomePulse uses header-bearing JWT, not cookies.
+- **Dockerfile is multi-stage on purpose** (2.1.0): the builder stage owns pip installs into `/opt/venv`; the runtime stage copies the venv over. This keeps application-code changes from invalidating the pip layer so local `docker compose up --build` is fast. Don't "simplify" it back to a single stage.
+- **GHCR images are multi-arch** (2.1.0): `.github/workflows/docker-publish.yml` emits `linux/amd64` + `linux/arm64` via Buildx + QEMU so Raspberry Pi / Apple-silicon hosts can `docker pull` without building. Publish triggers: push to main (-> `latest` + short-sha), tag push `v*.*.*` (-> full semver + major.minor).
 
 ## Known Deferred Items
 

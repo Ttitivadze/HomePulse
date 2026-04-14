@@ -2,9 +2,65 @@
 
 A self-hosted monitoring dashboard for your homelab. See your entire infrastructure at a glance — Proxmox nodes, Docker containers, media libraries, active streams, and an AI chat assistant — all in one dark-themed, mobile-friendly page.
 
-![Python 3.12](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green) ![License: MIT](https://img.shields.io/badge/license-MIT-purple)
+[![tests](https://github.com/Ttitivadze/HomePulse/actions/workflows/tests.yml/badge.svg)](https://github.com/Ttitivadze/HomePulse/actions/workflows/tests.yml)
+[![docker](https://github.com/Ttitivadze/HomePulse/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Ttitivadze/HomePulse/actions/workflows/docker-publish.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)
+![License: MIT](https://img.shields.io/badge/license-MIT-purple)
 
 ## Changelog
+
+### v2.1.0
+
+Minor release focused on broader-market polish: onboarding, CI/CD,
+parity with other homelab dashboards, and internal code quality. No
+breaking changes.
+
+**New widgets**
+- **Bookmarks / app launcher** — Admin-curated grid of quick-launch
+  links on the dashboard. Optional grouping and emoji/image icons.
+  URL allow-list (http/https/mailto) blocks XSS via malicious schemes.
+- **HomePulse Host** — Self-monitoring card showing CPU load, memory
+  usage, system + process uptime, and HomePulse's own RSS, scraped
+  from `/proc`. Competing dashboards don't ship this.
+
+**Distribution & onboarding**
+- **Published Docker image** — `ghcr.io/ttitivadze/homepulse:latest`
+  (multi-arch: `linux/amd64` + `linux/arm64`). End users can
+  `docker compose pull` instead of `docker compose build`.
+- **GitHub Actions CI** — pytest runs on every push to main and on
+  PRs; new status badges in the README.
+- **Multi-stage Dockerfile** — Code changes no longer invalidate the
+  `pip install` layer; local rebuilds are much faster.
+- **PWA manifest + icons** — "Add to Home Screen" installs HomePulse
+  as a standalone app on iOS and Android.
+- **Rewritten Quick Start** — Three paths (GHCR image, minimum-viable
+  `.env`, build from source) so strangers get running in minutes.
+
+**Security & hardening**
+- `DASHBOARD_REQUIRE_AUTH=true` now narrows CORS to
+  `ALLOWED_ORIGINS` instead of leaving `*` wide open. `allow_credentials`
+  is explicitly `False` (no cookies).
+- `Path(ge=1)` on every `{id}` path parameter across settings and
+  api-keys endpoints — zero/negative IDs return 422 instead of
+  reaching the DB layer.
+- `REGISTRY_AUTH_JSON` env var lets operators configure per-registry
+  credentials for private image update checks.
+
+**Code quality**
+- New `backend/integrations/_status.py` exposes `ok()` / `failure()`
+  / `unconfigured()` so every integration returns the same envelope.
+- New `backend.cache.TTL` class centralises every cache TTL — no more
+  magic numbers scattered across modules.
+- `arr.py`'s `_fetch` and `_fetch_tautulli` consolidated around a
+  shared `_api_get` helper.
+- Dead `config.yml` `sections:` block removed (unused since v1.1).
+- Stale OpenClaw references scrubbed from README/CLAUDE.md/.env.example.
+
+**Tests**
+- 128 tests (up from 116). New modules for bookmarks, self-stats;
+  regression cases for Path validation, CORS gating, container-update
+  registry auth, NAS mount statvfs.
 
 ### v2.0.0
 
@@ -97,7 +153,13 @@ is removed in favour of Anthropic Claude.
 - **Docker** — Every container with status, resource usage, clickable service links, and friendly display names. Supports multiple Docker hosts (local socket + remote TCP).
 - **Media Library** — Radarr (movies), Sonarr (TV), Lidarr (music) showing downloaded, requested, and missing counts plus active download queue (completed items filtered out, first 3 shown with expand)
 - **Active Streams** — Jellyfin, Plex (direct), or Tautulli — see who's watching what, transcode status, and playback progress
-- **OpenClaw Chat** — Slide-out AI chat panel with streaming token display, connected to your self-hosted OpenClaw instance
+- **Claude AI Chat** — Slide-out chat panel with streaming token display, backed by Anthropic's API. Ask questions about your homelab, get troubleshooting help, or use it as a general assistant.
+- **Uptime Kuma** — Per-monitor status cards (requires `UPTIME_KUMA_METRICS_TOKEN`); falls back to a single reachability indicator otherwise
+- **Infrastructure** — Storage usage (Proxmox + optional NAS mounts), last-backup status per CT, SSL cert expiry via NPM
+- **Container updates** — Registry-digest comparison shows which containers have newer images available (6 h cached, rate-limit aware, private-registry auth supported)
+- **Telegram notifications** — Send test alerts from the dashboard; framework ready for auto-triggers in 2.1
+- **Light / dark theme** — Toggle in the header, persisted in localStorage
+- **External API keys** — Issue `hp_…` keys for external tools; optional `DASHBOARD_REQUIRE_AUTH` gate accepts JWT or `X-API-Key`
 - **Multi-instance support** — Add multiple Proxmox and Docker hosts through the admin panel — no `.env` numbering needed
 - **Single-request refresh** — One API call fetches everything in parallel; 30-second auto-refresh cycle
 - **Per-section retry** — If one service is down, retry just that section without reloading
@@ -106,14 +168,61 @@ is removed in favour of Anthropic Claude.
 
 ## Quick Start
 
+### Fastest path (pre-built image)
+
+No build required — pull the published image from GHCR:
+
+```bash
+mkdir homepulse && cd homepulse
+
+# Fetch the example compose file + .env template (no git clone needed)
+curl -sSfL https://raw.githubusercontent.com/Ttitivadze/HomePulse/main/docker-compose.yml -o docker-compose.yml
+curl -sSfL https://raw.githubusercontent.com/Ttitivadze/HomePulse/main/.env.example -o .env
+
+# Swap `build: .` for the published image (one-time tweak)
+sed -i 's|build: \.|image: ghcr.io/ttitivadze/homepulse:latest|' docker-compose.yml
+
+docker compose up -d
+```
+
+Open **http://localhost:8450** (or `http://<server-ip>:8450` from any device on the LAN).
+On the first visit, click the gear icon to create the admin account — everything else is configured from the in-app **Settings → Services** panel.
+
+### Minimum viable `.env`
+
+HomePulse ships with every integration **optional**. The smallest useful `.env` is:
+
+```ini
+# Host-visible Docker socket group (find with: stat -c '%g' /var/run/docker.sock)
+DOCKER_GID=999
+# Strong random string, anything 48+ chars. Sessions survive restarts when set.
+JWT_SECRET=change-me-to-a-long-random-string
+```
+
+That's it — start the container and you'll see the Docker section populate. Add Proxmox / Radarr / Sonarr / Claude / etc. through the admin panel later (no restart needed for service config changes).
+
+### Build from source (contributors)
+
 ```bash
 git clone https://github.com/Ttitivadze/HomePulse.git
 cd HomePulse
-cp .env.example .env     # Edit with your service URLs and API keys
-docker compose up -d     # Dashboard at http://your-server:8450
+cp .env.example .env
+docker compose up -d --build
 ```
 
-Access from any device on your LAN: `http://<server-ip>:8450`
+Or run the FastAPI server directly:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+uvicorn backend.main:app --reload    # http://localhost:8000
+pytest tests/ -q                     # run the suite
+```
+
+### Accessing the dashboard
+
+- **Browser** — `http://<server-ip>:8450` works from any device on the LAN (CORS is wide-open by default)
+- **Mobile** — visit the URL and use "Add to Home Screen"; the PWA manifest gives you a standalone app icon
+- **External tools** — create an API key in **Settings → API Keys**, then `curl -H "X-API-Key: hp_…" http://<server>:8450/api/dashboard`
 
 ## Configuration
 
@@ -140,9 +249,21 @@ All integrations are optional — configure only the services you use.
 | `JELLYFIN_URL`, `JELLYFIN_API_KEY` | Jellyfin (direct sessions API) |
 | `PLEX_URL`, `PLEX_TOKEN` | Plex (direct sessions API) |
 | `TAUTULLI_URL`, `TAUTULLI_API_KEY` | Tautulli (richer Plex stats) |
-| **Chat** | |
-| `OPENCLAW_URL`, `OPENCLAW_API_KEY` | OpenClaw instance |
-| `OPENCLAW_MODEL` | Model to use (default: `default`) |
+| **Claude AI** | |
+| `CLAUDE_API_KEY` | Anthropic API key (https://console.anthropic.com/) |
+| `CLAUDE_MODEL` | Model ID (default: `claude-sonnet-4-5`) |
+| **Uptime Kuma** | |
+| `UPTIME_KUMA_URL` | Reachability probe |
+| `UPTIME_KUMA_METRICS_TOKEN` | Optional — enables per-monitor cards via `/metrics` |
+| **Infrastructure** | |
+| `NPM_URL`, `NPM_API_TOKEN` | Nginx Proxy Manager API for SSL cert expiry |
+| `NAS_MOUNTS` | Comma-separated container-visible paths (e.g. `/mnt/nas,/mnt/backup`) |
+| **Notifications** | |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram alerting |
+| **Security** | |
+| `DASHBOARD_REQUIRE_AUTH` | When `true`, dashboard requires JWT or `X-API-Key` (default `false`) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins when auth is on (default: same-origin) |
+| `REGISTRY_AUTH_JSON` | JSON map `{"ghcr.io":{"username":"…","password":"…"}}` for private-registry update checks |
 | **Dashboard** | |
 | `REFRESH_INTERVAL` | Auto-refresh in seconds (default: `30`) |
 
@@ -150,23 +271,24 @@ All integrations are optional — configure only the services you use.
 
 ### Display Config (`config/config.yml`)
 
-Toggle dashboard sections and set friendly Docker container names:
+Set the dashboard title, friendly container names, and custom per-container URLs:
 
 ```yaml
 dashboard:
   title: "HomePulse"
   refresh_interval: 30
 
-sections:
-  proxmox: true
-  docker: true
-  arr_suite: true
-  openclaw_chat: true
-
 docker_labels:
   plex: "Plex Media Server"
   radarr: "Radarr"
+
+docker_links:
+  # Optional: override the ↗ link target per container.
+  # Defaults to http://<docker host>:<first exposed port> when empty.
+  plex: "https://plex.example.com"
 ```
+
+Section ordering is controlled from the admin Settings panel (Appearance → Section Order) — no YAML toggle.
 
 ### Getting API Keys
 
@@ -207,9 +329,14 @@ backend/
   integrations/
     proxmox.py           # Proxmox VE (parallel node fetches)
     docker_int.py        # Docker socket (parallel stats)
+    docker_updates.py    # Container update checks (registry digest, 6h cached)
     arr.py               # Radarr/Sonarr/Lidarr + Jellyfin/Plex/Tautulli
-    openclaw.py          # Chat proxy (streaming + non-streaming)
+    claude_chat.py       # Anthropic Claude chat proxy (streaming SSE)
+    uptime_kuma.py       # Uptime Kuma reachability + /metrics parser
+    infrastructure.py    # Proxmox storage, backups, SSL certs, NAS mounts
+    api_keys.py          # External API key CRUD + X-API-Key verification
     settings.py          # Admin settings (UI, services, users)
+  notifications.py       # Telegram notification provider
   static/
     index.html           # SPA shell
     js/utils.js          # Shared escapeHtml/escapeAttr utilities
@@ -235,9 +362,12 @@ tests/                   # pytest test suite
 | GET | `/api/arr/sonarr` | TV library + queue |
 | GET | `/api/arr/lidarr` | Music library + queue |
 | GET | `/api/arr/streaming` | Active streams |
-| GET | `/api/openclaw/status` | OpenClaw online/offline |
-| POST | `/api/openclaw/chat` | Chat (JSON response) |
-| POST | `/api/openclaw/chat/stream` | Chat (SSE streaming) |
+| GET | `/api/uptime-kuma/status` | Uptime Kuma reachability + monitors |
+| GET | `/api/infrastructure/status` | Storage / backups / SSL / NAS |
+| GET | `/api/claude/status` | Claude chat configured? |
+| POST | `/api/claude/chat` | Chat (JSON response) |
+| POST | `/api/claude/chat/stream` | Chat (SSE streaming) |
+| POST | `/api/notifications/test` | Send a Telegram test alert |
 | GET | `/api/auth/status` | Check if setup is needed |
 | POST | `/api/auth/setup` | Create first admin account |
 | POST | `/api/auth/login` | Login and get JWT |
@@ -253,6 +383,9 @@ tests/                   # pytest test suite
 | POST | `/api/settings/instances/{id}/test` | Test instance connectivity (admin) |
 | GET | `/api/settings/users` | List users (admin) |
 | POST | `/api/settings/users` | Create user (admin) |
+| GET | `/api/settings/api-keys` | List API keys (admin) |
+| POST | `/api/settings/api-keys` | Create API key — plaintext shown once (admin) |
+| DELETE | `/api/settings/api-keys/{id}` | Revoke API key (admin) |
 
 ## Docker Notes
 
@@ -266,6 +399,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `2.1.0` — Bookmarks widget, self-monitoring widget, PWA manifest, multi-arch GHCR image, GitHub Actions CI, multi-stage Dockerfile, shared error-return envelope, central cache TTL policy, CORS hardening + Path(ge=1), private-registry auth, NAS mounts
 - `2.0.0` — Claude chat (replaces OpenClaw), Uptime Kuma + Infrastructure widgets, Telegram notifications, login rate limiting, settings hot-reload, light-theme toggle, container update badges + registry-digest backend, live preview, external API keys, DASHBOARD_REQUIRE_AUTH gate
 - `1.2.4` — Cache-busting static assets, version display in header
 - `1.2.3` — Login form dismisses on successful auth

@@ -96,6 +96,21 @@ def _init_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(key_prefix);
 
+        -- App-launcher / bookmarks. Managed via the admin Settings panel;
+        -- rendered on the dashboard as grouped clickable cards.
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            icon TEXT DEFAULT '',
+            group_name TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_bookmarks_sort ON bookmarks(group_name, sort_order);
+
         -- Ensure exactly one UI settings row exists
         INSERT OR IGNORE INTO ui_settings (id) VALUES (1);
     """)

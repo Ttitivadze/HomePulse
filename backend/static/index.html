@@ -12,7 +12,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css?v=__APP_VERSION__">
   <link rel="stylesheet" href="/static/css/settings.css?v=__APP_VERSION__">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9783;</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/icon-192.svg">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.svg">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <meta name="application-name" content="HomePulse">
+  <meta name="apple-mobile-web-app-title" content="HomePulse">
 </head>
 <body>
 
@@ -53,6 +57,22 @@
   <!-- Main Layout -->
   <div class="main-container">
     <div id="dashboard" class="dashboard">
+
+      <!-- Bookmarks (rendered only when admin has added any) -->
+      <div class="section hidden" id="bookmarks-section">
+        <div class="section-header">
+          <div class="section-icon bookmarks-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <span class="section-title">Bookmarks</span>
+          <span id="bookmarks-badge" class="section-badge">0</span>
+        </div>
+        <div id="bookmarks-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
 
       <!-- Proxmox Section -->
       <div class="section">
@@ -156,6 +176,25 @@
         </div>
       </div>
 
+      <!-- Self-monitoring Section (HomePulse's own host) -->
+      <div class="section">
+        <div class="section-header">
+          <div class="section-icon self-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+              <path d="M21 3v5h-5"></path>
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+              <path d="M8 16H3v5"></path>
+            </svg>
+          </div>
+          <span class="section-title">HomePulse Host</span>
+          <span id="self-badge" class="section-badge">...</span>
+        </div>
+        <div id="self-content">
+          <div class="loading-skeleton"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Chat Panel -->
@@ -218,6 +257,7 @@
         <div class="settings-tabs">
           <button class="settings-tab active" data-tab="ui">Appearance</button>
           <button class="settings-tab" data-tab="services">Services</button>
+          <button class="settings-tab" data-tab="bookmarks">Bookmarks</button>
           <button class="settings-tab" data-tab="users">Accounts</button>
           <button class="settings-tab" data-tab="api-keys">API Keys</button>
         </div>
@@ -282,6 +322,33 @@
           <div class="settings-actions">
             <button id="services-save" class="settings-save-btn">Save Changes</button>
           </div>
+        </div>
+
+        <!-- Bookmarks Tab -->
+        <div id="tab-bookmarks" class="settings-tab-content">
+          <p class="settings-help">Add quick-launch links that appear on the
+          dashboard. URLs must start with <code>http://</code>, <code>https://</code>,
+          or <code>mailto:</code>. The Icon field accepts an emoji, an image URL,
+          or a short text label.</p>
+          <div id="bookmarks-list"></div>
+          <h3 style="margin-top:20px">Add Bookmark</h3>
+          <div class="settings-form-group">
+            <label>Name</label>
+            <input type="text" id="new-bookmark-name" class="settings-input" placeholder="e.g. Plex">
+          </div>
+          <div class="settings-form-group">
+            <label>URL</label>
+            <input type="url" id="new-bookmark-url" class="settings-input" placeholder="https://plex.example.com">
+          </div>
+          <div class="settings-form-group">
+            <label>Icon (optional)</label>
+            <input type="text" id="new-bookmark-icon" class="settings-input" placeholder="🎬 or https://example.com/logo.png">
+          </div>
+          <div class="settings-form-group">
+            <label>Group (optional)</label>
+            <input type="text" id="new-bookmark-group" class="settings-input" placeholder="Media">
+          </div>
+          <button id="create-bookmark-btn" class="settings-save-btn">Add Bookmark</button>
         </div>
 
         <!-- Users Tab -->

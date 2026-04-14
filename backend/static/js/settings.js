@@ -29,6 +29,7 @@ const Settings = {
     document.getElementById('services-save').addEventListener('click', () => this.saveServices());
     document.getElementById('add-user-btn').addEventListener('click', () => this.addUser());
     document.getElementById('create-api-key-btn').addEventListener('click', () => this.createApiKey());
+    document.getElementById('create-bookmark-btn').addEventListener('click', () => this.createBookmark());
 
     // Tab switching
     document.querySelectorAll('.settings-tab').forEach(tab => {
@@ -48,6 +49,8 @@ const Settings = {
       if (delUser) { this.deleteUser(parseInt(delUser.dataset.deleteUser, 10)); return; }
       const revokeKey = e.target.closest('[data-revoke-api-key]');
       if (revokeKey) { this.revokeApiKey(parseInt(revokeKey.dataset.revokeApiKey, 10)); return; }
+      const delBookmark = e.target.closest('[data-delete-bookmark]');
+      if (delBookmark) { this.deleteBookmark(parseInt(delBookmark.dataset.deleteBookmark, 10)); return; }
     });
   },
 
@@ -115,6 +118,7 @@ const Settings = {
       'streaming': 'streaming-content',
       'uptime_kuma': 'uptime-content',
       'infrastructure': 'infra-content',
+      'self_stats': 'self-content',
     };
     const sections = [];
     for (const key of order) {
@@ -231,6 +235,7 @@ const Settings = {
     if (tabName === 'services') this.loadServices();
     if (tabName === 'users') this.loadUsers();
     if (tabName === 'api-keys') this.loadApiKeys();
+    if (tabName === 'bookmarks') this.loadBookmarks();
   },
 
   // ── UI Tab ──────────────────────────────────────────────────
@@ -249,7 +254,7 @@ const Settings = {
       r.checked = r.value === density;
     });
 
-    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming', 'uptime_kuma', 'infrastructure']);
+    this.populateSectionOrder(s.section_order || ['proxmox', 'docker', 'arr', 'streaming', 'uptime_kuma', 'infrastructure', 'self_stats']);
     this._bindLivePreview();
     this._uiDirty = false;
     this._updatePreviewIndicator();
@@ -264,6 +269,7 @@ const Settings = {
       streaming: 'Active Streams',
       uptime_kuma: 'Uptime Monitoring',
       infrastructure: 'Infrastructure',
+      self_stats: 'HomePulse Host',
     };
     container.innerHTML = order.map((key, i) => `
       <div class="section-order-item" data-key="${this._escAttr(key)}">
@@ -700,6 +706,74 @@ const Settings = {
       await Auth.apiJson(`/api/settings/users/${userId}`, { method: 'DELETE' });
       this.showToast(`User '${username}' deleted`);
       this.loadUsers();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  // ── Bookmarks Tab ────────────────────────────────────────────
+
+  async loadBookmarks() {
+    const container = document.getElementById('bookmarks-list');
+    container.innerHTML = '<div class="loading-skeleton" style="height:100px"></div>';
+    try {
+      const items = await Auth.apiJson('/api/settings/bookmarks');
+      if (!items.length) {
+        container.innerHTML = '<div class="settings-help">No bookmarks yet.</div>';
+        return;
+      }
+      let html = '<table class="users-table"><thead><tr><th>Name</th><th>URL</th><th>Group</th><th>Icon</th><th></th></tr></thead><tbody>';
+      for (const b of items) {
+        html += `<tr>
+          <td>${this._escHtml(b.name)}</td>
+          <td><code>${this._escHtml(b.url)}</code></td>
+          <td>${this._escHtml(b.group_name || '-')}</td>
+          <td>${this._escHtml(b.icon || '-')}</td>
+          <td class="user-actions">
+            <button class="user-action-btn danger" data-delete-bookmark="${b.id}" title="Delete">Delete</button>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = `<div class="settings-error">${this._escHtml(e.message)}</div>`;
+    }
+  },
+
+  async createBookmark() {
+    const name = document.getElementById('new-bookmark-name').value.trim();
+    const url = document.getElementById('new-bookmark-url').value.trim();
+    const icon = document.getElementById('new-bookmark-icon').value.trim();
+    const group_name = document.getElementById('new-bookmark-group').value.trim();
+
+    if (!name || !url) {
+      this.showToast('Name and URL are required', true);
+      return;
+    }
+    try {
+      await Auth.apiJson('/api/settings/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url, icon, group_name }),
+      });
+      document.getElementById('new-bookmark-name').value = '';
+      document.getElementById('new-bookmark-url').value = '';
+      document.getElementById('new-bookmark-icon').value = '';
+      document.getElementById('new-bookmark-group').value = '';
+      this.showToast(`Bookmark '${name}' added`);
+      this.loadBookmarks();
+    } catch (e) {
+      this.showToast(e.message, true);
+    }
+  },
+
+  async deleteBookmark(bookmarkId) {
+    if (!confirm('Delete this bookmark?')) return;
+    try {
+      await Auth.apiJson(`/api/settings/bookmarks/${bookmarkId}`, { method: 'DELETE' });
+      this.showToast('Bookmark deleted');
+      this.loadBookmarks();
     } catch (e) {
       this.showToast(e.message, true);
     }
