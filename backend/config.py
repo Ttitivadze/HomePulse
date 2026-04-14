@@ -183,11 +183,6 @@ class Settings:
             )
 
     @property
-    def section_enabled(self) -> dict:
-        """Which dashboard sections are enabled via config.yml."""
-        return self.DISPLAY.get("sections", {})
-
-    @property
     def docker_labels(self) -> dict:
         """Friendly names for Docker containers from config.yml."""
         return self.DISPLAY.get("docker_labels", {})

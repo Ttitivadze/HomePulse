@@ -1,19 +1,15 @@
 # HomePulse Configuration
-# Service-level overrides and display settings
+# Display settings loaded at startup. Safe to commit — no secrets.
 
 dashboard:
   title: "HomePulse"
   refresh_interval: 30  # seconds
 
-# Toggle which sections are visible
-sections:
-  proxmox: true
-  docker: true
-  arr_suite: true
-  streaming: true
-  uptime_kuma: true
-  infrastructure: true
-  claude_chat: true
+# Section visibility & order is owned by the admin Settings panel
+# (stored in the SQLite ui_settings.section_order column). If a section
+# is missing from that list it stays in its default DOM position. There
+# is deliberately no YAML-level toggle here — having two sources of
+# truth led to undefined precedence.
 
 # Custom labels for Docker containers (optional)
 # Maps container name to a friendly display name
