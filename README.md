@@ -6,6 +6,26 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v2.0.0
+
+Major release. This version consolidates the unreleased 1.3.0 homelab work
+and adds new features on top. Breaking change: `OpenClaw` chat integration
+is removed in favour of Anthropic Claude.
+
+- **Claude AI chat** — Replaces OpenClaw. Uses `AsyncAnthropic` (non-blocking), keeps the existing streaming-SSE frontend. New env vars: `CLAUDE_API_KEY`, `CLAUDE_MODEL`.
+- **Uptime Kuma integration** — New dashboard section showing monitoring status with a one-click open link. Env: `UPTIME_KUMA_URL`.
+- **Infrastructure monitoring** — Combined widget for storage usage (Proxmox API), last-backup status per CT, and SSL cert expiry countdown (NPM API). Env: `NPM_URL`, `NPM_API_TOKEN`.
+- **Telegram notifications** — Framework for sending alerts with a `POST /api/notifications/test` smoke endpoint. Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+- **Login rate limiting** — 5 failed attempts / IP / 60 s returns 429. In-memory, no extra dependency.
+- **Settings hot-reload** — Service config changes via the admin panel apply immediately; no restart required.
+- **Light theme + theme toggle** — CSS-variable-driven light theme, toggle button in the header, persisted in `localStorage`.
+- **Container update badges** — Frontend shows "Update" on containers whose running image digest differs from the registry's `latest`. Cached 6 h per image to respect Docker Hub's rate limit; capped at 3 uncached lookups per refresh cycle.
+- **Settings live preview** — Appearance tab applies changes in real time via `setProperty`; a "Preview active — Save to persist" indicator appears and auto-reverts on cancel/close.
+- **External API keys** — New `API Keys` settings tab. Admins issue `hp_…` keys (bcrypt-hashed in DB, plaintext shown once). Optional `DASHBOARD_REQUIRE_AUTH` env var gates the dashboard behind JWT or `X-API-Key`.
+- **docker_links** — Error-path Docker responses now include the `docker_links` mapping so the frontend can still render per-container URLs even when the socket is unreachable (Report #2 bug).
+- **Bump script** — `scripts/bump-version.sh <version>` updates `VERSION`, `backend/main.py`, `CLAUDE.md`, and `README.md` in one shot.
+- **Tests** — 93 tests (up from 66). New modules for Claude, Uptime Kuma, Infrastructure, Notifications, rate-limit, API keys, container updates; regression test for docker_links on error paths.
+
 ### v1.2.4
 - **Cache-busting**: All CSS/JS references now include `?v={version}` query params — browsers automatically fetch fresh files on redeploy, no manual cache clearing needed
 - **Version in header**: App version displayed next to "HomePulse" title in the header
@@ -246,6 +266,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `2.0.0` — Claude chat (replaces OpenClaw), Uptime Kuma + Infrastructure widgets, Telegram notifications, login rate limiting, settings hot-reload, light-theme toggle, container update badges + registry-digest backend, live preview, external API keys, DASHBOARD_REQUIRE_AUTH gate
 - `1.2.4` — Cache-busting static assets, version display in header
 - `1.2.3` — Login form dismisses on successful auth
 - `1.2.2` — Defensive frontend rendering, distinguish render errors from API failures
