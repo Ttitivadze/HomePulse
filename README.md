@@ -116,14 +116,61 @@ is removed in favour of Anthropic Claude.
 
 ## Quick Start
 
+### Fastest path (pre-built image)
+
+No build required — pull the published image from GHCR:
+
+```bash
+mkdir homepulse && cd homepulse
+
+# Fetch the example compose file + .env template (no git clone needed)
+curl -sSfL https://raw.githubusercontent.com/Ttitivadze/HomePulse/main/docker-compose.yml -o docker-compose.yml
+curl -sSfL https://raw.githubusercontent.com/Ttitivadze/HomePulse/main/.env.example -o .env
+
+# Swap `build: .` for the published image (one-time tweak)
+sed -i 's|build: \.|image: ghcr.io/ttitivadze/homepulse:latest|' docker-compose.yml
+
+docker compose up -d
+```
+
+Open **http://localhost:8450** (or `http://<server-ip>:8450` from any device on the LAN).
+On the first visit, click the gear icon to create the admin account — everything else is configured from the in-app **Settings → Services** panel.
+
+### Minimum viable `.env`
+
+HomePulse ships with every integration **optional**. The smallest useful `.env` is:
+
+```ini
+# Host-visible Docker socket group (find with: stat -c '%g' /var/run/docker.sock)
+DOCKER_GID=999
+# Strong random string, anything 48+ chars. Sessions survive restarts when set.
+JWT_SECRET=change-me-to-a-long-random-string
+```
+
+That's it — start the container and you'll see the Docker section populate. Add Proxmox / Radarr / Sonarr / Claude / etc. through the admin panel later (no restart needed for service config changes).
+
+### Build from source (contributors)
+
 ```bash
 git clone https://github.com/Ttitivadze/HomePulse.git
 cd HomePulse
-cp .env.example .env     # Edit with your service URLs and API keys
-docker compose up -d     # Dashboard at http://your-server:8450
+cp .env.example .env
+docker compose up -d --build
 ```
 
-Access from any device on your LAN: `http://<server-ip>:8450`
+Or run the FastAPI server directly:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+uvicorn backend.main:app --reload    # http://localhost:8000
+pytest tests/ -q                     # run the suite
+```
+
+### Accessing the dashboard
+
+- **Browser** — `http://<server-ip>:8450` works from any device on the LAN (CORS is wide-open by default)
+- **Mobile** — visit the URL and use "Add to Home Screen"; the PWA manifest gives you a standalone app icon
+- **External tools** — create an API key in **Settings → API Keys**, then `curl -H "X-API-Key: hp_…" http://<server>:8450/api/dashboard`
 
 ## Configuration
 
