@@ -967,6 +967,28 @@ body.density-compact .stream-card { padding: 12px 16px; }
 }
 .theme-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ---- Uptime Kuma per-monitor view ---- */
+.uptime-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.uptime-summary {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.uptime-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 /* ---- Container Update Badge ---- */
 .update-badge {
   background: var(--yellow-dim);

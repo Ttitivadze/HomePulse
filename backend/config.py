@@ -90,6 +90,11 @@ class Settings:
 
         # Uptime Kuma
         self.UPTIME_KUMA_URL: str = _get("UPTIME_KUMA_URL").rstrip("/")
+        # Optional: when set, enables per-monitor status via Uptime Kuma's
+        # Prometheus /metrics endpoint. The token is the API key issued
+        # from Uptime Kuma's Settings > API Keys page; the basic-auth
+        # username can be any non-empty string.
+        self.UPTIME_KUMA_METRICS_TOKEN: str = _get("UPTIME_KUMA_METRICS_TOKEN")
 
         # Infrastructure (NPM for SSL certs)
         self.NPM_URL: str = _get("NPM_URL").rstrip("/")

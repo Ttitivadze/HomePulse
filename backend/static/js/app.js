@@ -717,27 +717,79 @@ const App = {
       return;
     }
 
-    const statusColor = data.status === 'online' ? '#22c55e' : data.status === 'degraded' ? '#eab308' : '#ef4444';
-    const statusText = data.status === 'online' ? 'Online' : data.status === 'degraded' ? 'Degraded' : 'Offline';
-    badge.textContent = statusText;
-    badge.style.background = statusColor;
-
     const esc = (s) => this.escapeHtml(String(s ?? ''));
     const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
-    const linkHtml = data.url ? ` <a href="${escAttr(data.url)}" target="_blank" rel="noopener" class="card-link" title="Open Uptime Kuma">&#8599;</a>` : '';
 
-    container.innerHTML = `
-      <div class="card-grid">
+    const monitors = Array.isArray(data.monitors) ? data.monitors : [];
+    const summary = data.summary || {};
+
+    // Header badge prefers the monitor summary when we have /metrics data.
+    let badgeText, badgeColor;
+    if (summary.total && summary.total > 0) {
+      badgeText = `${summary.up}/${summary.total}`;
+      badgeColor = summary.down > 0 ? '#ef4444' : '#22c55e';
+    } else {
+      badgeText = data.status === 'online' ? 'Online' : data.status === 'degraded' ? 'Degraded' : 'Offline';
+      badgeColor = data.status === 'online' ? '#22c55e' : data.status === 'degraded' ? '#eab308' : '#ef4444';
+    }
+    badge.textContent = badgeText;
+    badge.style.background = badgeColor;
+
+    const linkHtml = data.url
+      ? ` <a href="${escAttr(data.url)}" target="_blank" rel="noopener" class="card-link" title="Open Uptime Kuma">&#8599;</a>`
+      : '';
+
+    // No per-monitor data (no metrics token set or service offline) —
+    // keep the v1.3.0 single-card ping view as a graceful fallback.
+    if (!monitors.length) {
+      const statusText = data.status === 'online' ? 'Online' : data.status === 'degraded' ? 'Degraded' : 'Offline';
+      container.innerHTML = `
+        <div class="card-grid">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-name">Uptime Kuma${linkHtml}</span>
+              <span class="status-badge status-${data.status === 'online' ? 'running' : 'stopped'}">${esc(statusText)}</span>
+            </div>
+            <div class="card-body" style="text-align:center;padding:20px;color:var(--text-secondary);">
+              ${data.status === 'online' ? 'Monitoring dashboard is healthy' : 'Monitoring dashboard is unreachable'}
+              <div style="font-size:0.72rem;margin-top:8px;opacity:0.75">Set UPTIME_KUMA_METRICS_TOKEN for per-monitor status</div>
+            </div>
+          </div>
+        </div>`;
+      return;
+    }
+
+    // Deep view: one card per monitor with a coloured dot and response time.
+    const dotFor = (status) => {
+      const map = { up: '#22c55e', down: '#ef4444', pending: '#eab308', maintenance: '#6366f1', unknown: '#6b7280' };
+      return map[status] || map.unknown;
+    };
+    const cards = monitors.map(m => {
+      const rt = m.response_time_ms != null ? `${m.response_time_ms} ms` : '-';
+      const cert = m.cert_days_remaining != null ? ` · ${m.cert_days_remaining}d cert` : '';
+      const monLink = m.url
+        ? ` <a href="${escAttr(m.url)}" target="_blank" rel="noopener" class="card-link" title="Open monitor target">&#8599;</a>`
+        : '';
+      return `
         <div class="card">
           <div class="card-header">
-            <span class="card-name">Uptime Kuma${linkHtml}</span>
-            <span class="status-badge status-${data.status === 'online' ? 'running' : 'stopped'}">${esc(statusText)}</span>
+            <span class="card-name">
+              <span class="uptime-dot" style="background:${dotFor(m.status)}"></span>
+              ${esc(m.name)}${monLink}
+            </span>
+            <span class="status-badge status-${m.status === 'up' ? 'running' : 'stopped'}">${esc(m.status)}</span>
           </div>
-          <div class="card-body" style="text-align:center;padding:20px;color:var(--text-secondary);">
-            ${data.status === 'online' ? 'Monitoring dashboard is healthy' : 'Monitoring dashboard is unreachable'}
+          <div class="card-body" style="font-size:0.78rem;color:var(--text-secondary);">
+            ${esc(m.type || 'monitor')} · ${esc(rt)}${esc(cert)}
           </div>
-        </div>
-      </div>`;
+        </div>`;
+    }).join('');
+    container.innerHTML = `
+      <div class="uptime-header">
+        <span>Uptime Kuma${linkHtml}</span>
+        <span class="uptime-summary">${summary.up ?? 0} up · ${summary.down ?? 0} down · ${summary.total ?? 0} total</span>
+      </div>
+      <div class="card-grid">${cards}</div>`;
   },
 
   // ── Infrastructure ─────────────────────────────────────────────
