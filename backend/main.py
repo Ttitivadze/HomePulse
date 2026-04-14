@@ -10,8 +10,8 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.integrations.proxmox import router as proxmox_router, fetch_proxmox_data
-from backend.integrations.docker_int import router as docker_router, fetch_docker_data
+from backend.integrations.proxmox import router as proxmox_router, fetch_all_proxmox_data
+from backend.integrations.docker_int import router as docker_router, fetch_all_docker_data
 from backend.integrations.arr import (
     router as arr_router,
     fetch_radarr_data,
@@ -125,8 +125,8 @@ async def health():
 async def dashboard():
     """Fetch all dashboard sections concurrently in a single request."""
     results = await asyncio.gather(
-        fetch_proxmox_data(),
-        fetch_docker_data(),
+        fetch_all_proxmox_data(),
+        fetch_all_docker_data(),
         fetch_radarr_data(),
         fetch_sonarr_data(),
         fetch_lidarr_data(),

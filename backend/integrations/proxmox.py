@@ -1,17 +1,18 @@
 import asyncio
+import json
 import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
-from backend import cache
+from backend import cache, database as db
 
 logger = logging.getLogger("homepulse.proxmox")
 
 router = APIRouter()
 
-# Module-level shared client; created lazily, closed during app shutdown.
+# Module-level shared client for the default instance; created lazily, closed during app shutdown.
 _client: httpx.AsyncClient | None = None
 
 
@@ -30,6 +31,23 @@ async def _get_client() -> httpx.AsyncClient:
             timeout=10.0,
         )
     return _client
+
+
+def _make_client(config: dict) -> httpx.AsyncClient:
+    """Create an httpx client from an instance config dict."""
+    host = config["host"].rstrip("/")
+    user = config.get("user", "root@pam")
+    token_name = config.get("token_name", "")
+    token_value = config.get("token_value", "")
+    verify_ssl = config.get("verify_ssl", False)
+    return httpx.AsyncClient(
+        base_url=host,
+        headers={
+            "Authorization": f"PVEAPIToken={user}!{token_name}={token_value}"
+        },
+        verify=bool(verify_ssl),
+        timeout=10.0,
+    )
 
 
 async def _fetch_node_guests(
@@ -75,43 +93,47 @@ async def _fetch_node_guests(
     return vms, containers
 
 
+async def _fetch_instance(client: httpx.AsyncClient, host_url: str) -> dict:
+    """Fetch nodes from a single Proxmox instance using the given client."""
+    nodes_resp = await client.get("/api2/json/nodes")
+    nodes_resp.raise_for_status()
+    nodes = nodes_resp.json()["data"]
+
+    async def build_node(node):
+        node_name = node["node"]
+        vms, containers = await _fetch_node_guests(client, node_name)
+        return {
+            "name": node_name,
+            "status": node.get("status", "unknown"),
+            "cpu": round(node.get("cpu", 0) * 100, 1),
+            "mem_used": node.get("mem", 0),
+            "mem_total": node.get("maxmem", 0),
+            "uptime": node.get("uptime", 0),
+            "vms": vms,
+            "containers": containers,
+        }
+
+    results = await asyncio.gather(
+        *(build_node(n) for n in nodes),
+        return_exceptions=True,
+    )
+    valid_nodes = [r for r in results if isinstance(r, dict)]
+    return {"configured": True, "nodes": valid_nodes, "url": host_url}
+
+
 async def fetch_proxmox_data() -> dict:
-    """Fetch all Proxmox data. Returns a dict; never raises."""
+    """Fetch data from the default (env-based) Proxmox instance. Returns a dict; never raises."""
     if not settings.PROXMOX_HOST:
         return {"configured": False, "nodes": []}
 
-    cached = cache.get("proxmox")
+    cached = cache.get("proxmox:default")
     if cached is not None:
         return cached
 
     try:
         client = await _get_client()
-        nodes_resp = await client.get("/api2/json/nodes")
-        nodes_resp.raise_for_status()
-        nodes = nodes_resp.json()["data"]
-
-        async def build_node(node):
-            node_name = node["node"]
-            vms, containers = await _fetch_node_guests(client, node_name)
-            return {
-                "name": node_name,
-                "status": node.get("status", "unknown"),
-                "cpu": round(node.get("cpu", 0) * 100, 1),
-                "mem_used": node.get("mem", 0),
-                "mem_total": node.get("maxmem", 0),
-                "uptime": node.get("uptime", 0),
-                "vms": vms,
-                "containers": containers,
-            }
-
-        results = await asyncio.gather(
-            *(build_node(n) for n in nodes),
-            return_exceptions=True,
-        )
-        valid_nodes = [r for r in results if isinstance(r, dict)]
-
-        data = {"configured": True, "nodes": valid_nodes, "url": settings.PROXMOX_HOST}
-        cache.put("proxmox", data)
+        data = await _fetch_instance(client, settings.PROXMOX_HOST)
+        cache.put("proxmox:default", data)
         return data
 
     except httpx.ConnectError:
@@ -120,15 +142,86 @@ async def fetch_proxmox_data() -> dict:
     except httpx.HTTPStatusError as e:
         logger.warning("Proxmox API error: %s", e.response.status_code)
         return {"configured": True, "nodes": [], "error": "Proxmox API error"}
-    except Exception as e:
+    except Exception:
         logger.exception("Proxmox fetch failed")
         return {"configured": True, "nodes": [], "error": "Proxmox request failed"}
 
 
+async def _fetch_additional_instance(instance_id: int, name: str, config: dict) -> dict:
+    """Fetch data from an additional Proxmox instance stored in the DB."""
+    cache_key = f"proxmox:{instance_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    host = config.get("host", "").rstrip("/")
+    if not host:
+        return {"name": name, "configured": False, "nodes": []}
+
+    client = _make_client(config)
+    try:
+        data = await _fetch_instance(client, host)
+        data["name"] = name
+        cache.put(cache_key, data)
+        return data
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to Proxmox instance '%s' at %s", name, host)
+        return {"name": name, "configured": True, "nodes": [], "url": host, "error": f"Cannot connect to {name}"}
+    except httpx.HTTPStatusError as e:
+        logger.warning("Proxmox instance '%s' API error: %s", name, e.response.status_code)
+        return {"name": name, "configured": True, "nodes": [], "url": host, "error": "Proxmox API error"}
+    except Exception:
+        logger.exception("Proxmox instance '%s' fetch failed", name)
+        return {"name": name, "configured": True, "nodes": [], "url": host, "error": "Proxmox request failed"}
+    finally:
+        await client.aclose()
+
+
+async def fetch_all_proxmox_data() -> dict:
+    """Fetch data from all Proxmox instances (default + additional). Never raises."""
+    instances = []
+
+    # Default instance from env/settings
+    default_data = await fetch_proxmox_data()
+    if default_data.get("configured"):
+        default_data["name"] = "Default"
+        instances.append(default_data)
+
+    # Additional instances from DB
+    try:
+        rows = await db.fetch_all(
+            "SELECT id, instance_name, config FROM service_instances WHERE service_type = 'proxmox'"
+        )
+    except Exception:
+        logger.exception("Failed to load Proxmox instances from DB")
+        rows = []
+
+    if rows:
+        tasks = []
+        for row in rows:
+            config = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
+            tasks.append(_fetch_additional_instance(row["id"], row["instance_name"], config))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, dict):
+                instances.append(r)
+            elif isinstance(r, Exception):
+                logger.error("Proxmox additional instance failed: %s", r)
+
+    if not instances:
+        return {"configured": False, "instances": []}
+
+    return {"configured": True, "instances": instances}
+
+
 @router.get("/status")
 async def get_proxmox_status():
-    """Get all nodes, VMs and LXC containers with their status."""
-    data = await fetch_proxmox_data()
-    if "error" in data:
-        raise HTTPException(status_code=503, detail=data["error"])
+    """Get all nodes, VMs and LXC containers from all Proxmox instances."""
+    data = await fetch_all_proxmox_data()
+    if not data.get("configured"):
+        return data
+    # Check if all instances have errors
+    errors = [inst for inst in data["instances"] if "error" in inst]
+    if len(errors) == len(data["instances"]):
+        raise HTTPException(status_code=503, detail=errors[0]["error"])
     return data
