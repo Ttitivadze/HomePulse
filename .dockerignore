@@ -32,3 +32,10 @@ data/
 .env
 .env.*
 *.md
+
+# CI & tooling (not needed at runtime)
+.github/
+docs/
+scripts/
+*.tgz
+*.tar.gz
