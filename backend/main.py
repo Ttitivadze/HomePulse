@@ -101,12 +101,26 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# CORS — allow any origin so the dashboard works from any device on the LAN
+# CORS policy:
+#   - Default (DASHBOARD_REQUIRE_AUTH=false): allow any origin so the
+#     dashboard works from any device on the LAN without configuration.
+#   - With auth on: restrict to the configured ALLOWED_ORIGINS list so
+#     credentialed requests (JWT / X-API-Key) can't be issued from
+#     untrusted origins. An empty list means same-origin only.
+if settings.DASHBOARD_REQUIRE_AUTH:
+    cors_origins = settings.ALLOWED_ORIGINS or []
+    logger.info(
+        "CORS locked to %s (DASHBOARD_REQUIRE_AUTH=true)",
+        cors_origins or "same-origin only",
+    )
+else:
+    cors_origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
+    allow_credentials=False,
 )
 
 # API routes

@@ -125,6 +125,17 @@ class Settings:
             _get("DASHBOARD_REQUIRE_AUTH", "false").lower() == "true"
         )
 
+        # Comma-separated list of CORS origins that may make credentialed
+        # requests to the API. Only consulted when DASHBOARD_REQUIRE_AUTH
+        # is true — otherwise CORS stays wide open (``*``) to preserve
+        # pre-2.0 LAN-friendly behaviour. When empty and auth is on,
+        # HomePulse falls back to same-origin only (no ``Access-Control-
+        # Allow-Origin`` header is emitted for cross-origin requests).
+        raw_origins = _get("ALLOWED_ORIGINS", "")
+        self.ALLOWED_ORIGINS: list[str] = [
+            o.strip() for o in raw_origins.split(",") if o.strip()
+        ]
+
         # Registry authentication for container update checks.
         # REGISTRY_AUTH_JSON is expected to be a JSON object of the form:
         #   {"ghcr.io": {"username": "...", "password": "..."},
