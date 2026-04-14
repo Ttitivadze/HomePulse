@@ -23,6 +23,11 @@ from backend.integrations.claude_chat import router as claude_router
 from backend.integrations.uptime_kuma import router as uptime_kuma_router, fetch_uptime_kuma_data
 from backend.integrations.infrastructure import router as infra_router, fetch_infrastructure_data
 from backend.integrations.self_stats import router as self_stats_router, fetch_self_stats_data
+from backend.integrations.bookmarks import (
+    public_router as bookmarks_public_router,
+    admin_router as bookmarks_admin_router,
+    _fetch_bookmarks as fetch_bookmarks_data,
+)
 from backend.integrations.settings import router as settings_router
 from backend.notifications import router as notifications_router
 from backend.integrations.api_keys import router as api_keys_router, require_api_key_or_jwt
@@ -132,6 +137,8 @@ app.include_router(claude_router, prefix="/api/claude", tags=["claude"])
 app.include_router(uptime_kuma_router, prefix="/api/uptime-kuma", tags=["uptime-kuma"])
 app.include_router(infra_router, prefix="/api/infrastructure", tags=["infrastructure"])
 app.include_router(self_stats_router, prefix="/api/self-stats", tags=["self-stats"])
+app.include_router(bookmarks_public_router, prefix="/api/bookmarks", tags=["bookmarks"])
+app.include_router(bookmarks_admin_router, prefix="/api/settings/bookmarks", tags=["bookmarks"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 app.include_router(notifications_router, prefix="/api/notifications", tags=["notifications"])
@@ -188,6 +195,7 @@ async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
         fetch_uptime_kuma_data(),
         fetch_infrastructure_data(),
         fetch_self_stats_data(),
+        fetch_bookmarks_data(),
         return_exceptions=True,
     )
 
@@ -197,7 +205,16 @@ async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
             return {"configured": False, "error": "Service unavailable"}
         return result
 
-    proxmox, docker, radarr, sonarr, lidarr, streaming, uptime_kuma, infrastructure, self_stats = results
+    (proxmox, docker, radarr, sonarr, lidarr, streaming,
+     uptime_kuma, infrastructure, self_stats, bookmarks) = results
+
+    # Bookmarks return a raw list from the DB — wrap in the standard
+    # envelope so the frontend treats it like any other section.
+    if isinstance(bookmarks, Exception):
+        logger.error("Bookmarks fetch failed: %s", bookmarks)
+        bookmarks_section = {"configured": False, "error": "Bookmarks unavailable", "items": []}
+    else:
+        bookmarks_section = {"configured": bool(bookmarks), "error": None, "items": bookmarks}
 
     return {
         "proxmox": safe(proxmox),
@@ -209,5 +226,6 @@ async def dashboard(_principal: dict | None = Depends(optional_dashboard_auth)):
         "uptime_kuma": safe(uptime_kuma),
         "infrastructure": safe(infrastructure),
         "self_stats": safe(self_stats),
+        "bookmarks": bookmarks_section,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

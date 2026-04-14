@@ -80,6 +80,7 @@ const App = {
       if (data.uptime_kuma) this.safeRender('uptime-content', 'Uptime', 'uptime', () => this.renderUptimeKuma(data.uptime_kuma));
       if (data.infrastructure) this.safeRender('infra-content', 'Infrastructure', 'infrastructure', () => this.renderInfrastructure(data.infrastructure));
       if (data.self_stats) this.safeRender('self-content', 'HomePulse Host', 'self', () => this.renderSelfStats(data.self_stats));
+      this.renderBookmarks(data.bookmarks);
       this.updateTimestamp(data.timestamp);
     } catch (e) {
       console.error('Dashboard load failed:', e);
@@ -870,6 +871,74 @@ const App = {
       const diffDays = Math.floor(diffHours / 24);
       return `${diffDays}d ago`;
     } catch { return isoStr; }
+  },
+
+  // ── Bookmarks / app launcher ─────────────────────────────────────
+
+  renderBookmarks(data) {
+    const section = document.getElementById('bookmarks-section');
+    const content = document.getElementById('bookmarks-content');
+    const badge = document.getElementById('bookmarks-badge');
+    if (!section || !content) return;
+
+    const items = (data && Array.isArray(data.items)) ? data.items : [];
+
+    // Hide the section entirely when no bookmarks exist. Operators on a
+    // fresh install shouldn't see an empty-state placeholder for a
+    // feature they haven't opted into.
+    if (!items.length) {
+      section.classList.add('hidden');
+      return;
+    }
+    section.classList.remove('hidden');
+    if (badge) badge.textContent = String(items.length);
+
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
+
+    // Group by group_name (empty string => "Ungrouped"), preserving DB order.
+    const groups = new Map();
+    for (const b of items) {
+      const key = (b.group_name || '').trim();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(b);
+    }
+
+    const renderCard = (b) => {
+      // Safe-URL gate: only http(s) and mailto are accepted server-side,
+      // but belt-and-braces check client-side too.
+      const rawUrl = String(b.url || '');
+      const isSafe = /^(https?:|mailto:)/i.test(rawUrl);
+      if (!isSafe) return '';
+      const icon = b.icon ? this._renderBookmarkIcon(b.icon) : '';
+      return `
+        <a class="bookmark-card" href="${escAttr(rawUrl)}" target="_blank" rel="noopener noreferrer">
+          <span class="bookmark-icon">${icon}</span>
+          <span class="bookmark-name">${esc(b.name)}</span>
+        </a>`;
+    };
+
+    let html = '';
+    for (const [groupName, groupItems] of groups) {
+      if (groupName) {
+        html += `<div class="bookmark-group-label">${esc(groupName)}</div>`;
+      }
+      html += `<div class="bookmark-grid">${groupItems.map(renderCard).join('')}</div>`;
+    }
+    content.innerHTML = html;
+  },
+
+  _renderBookmarkIcon(raw) {
+    const esc = (s) => this.escapeHtml(String(s ?? ''));
+    const escAttr = (s) => Utils.escapeAttr(String(s ?? ''));
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    // Treat values starting with http(s):// or / as image sources, else
+    // render as literal text (emoji, initials, etc).
+    if (/^(https?:\/\/|\/)/i.test(s)) {
+      return `<img src="${escAttr(s)}" alt="" loading="lazy">`;
+    }
+    return esc(s);
   },
 
   // ── HomePulse Self-monitoring ────────────────────────────────────
