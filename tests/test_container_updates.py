@@ -115,3 +115,69 @@ async def test_digest_pinned_images_skipped():
     containers = [_FakeContainer("sha256:pinned")]
     await docker_updates.annotate_update_available(client, containers, infos)
     assert infos[0]["update_available"] is None
+
+
+def test_registry_host_docker_hub():
+    # Unprefixed and `library/` refs resolve to Docker Hub.
+    assert docker_updates._registry_host("nginx:latest") == "docker.io"
+    assert docker_updates._registry_host("library/nginx:latest") == "docker.io"
+
+
+def test_registry_host_explicit():
+    assert docker_updates._registry_host("ghcr.io/foo/bar:latest") == "ghcr.io"
+    assert docker_updates._registry_host("lscr.io/linuxserver/radarr:latest") == "lscr.io"
+    assert docker_updates._registry_host("localhost/foo:dev") == "localhost"
+    assert docker_updates._registry_host("registry.example.com:5000/foo:dev") == "registry.example.com:5000"
+
+
+def test_auth_config_lookup(monkeypatch):
+    from backend.config import settings
+    # No map -> no auth
+    monkeypatch.setattr(settings, "REGISTRY_AUTH", {}, raising=False)
+    assert docker_updates._auth_config_for("ghcr.io/foo/bar") is None
+
+    # Host match
+    monkeypatch.setattr(
+        settings, "REGISTRY_AUTH",
+        {"ghcr.io": {"username": "u", "password": "p"}},
+        raising=False,
+    )
+    assert docker_updates._auth_config_for("ghcr.io/foo/bar") == {"username": "u", "password": "p"}
+
+    # Docker Hub alias (docker.io <-> index.docker.io)
+    monkeypatch.setattr(
+        settings, "REGISTRY_AUTH",
+        {"index.docker.io": {"username": "u", "password": "p"}},
+        raising=False,
+    )
+    assert docker_updates._auth_config_for("nginx:latest") == {"username": "u", "password": "p"}
+
+
+@pytest.mark.asyncio
+async def test_auth_config_passed_to_registry_call(monkeypatch):
+    """When REGISTRY_AUTH has a match, the Docker SDK call receives auth_config."""
+    cache.clear()
+    from backend.config import settings
+    monkeypatch.setattr(
+        settings, "REGISTRY_AUTH",
+        {"ghcr.io": {"username": "u", "password": "p"}},
+        raising=False,
+    )
+
+    captured = {}
+
+    class _SpyImages:
+        def get_registry_data(self, image_ref, **kwargs):
+            captured["image_ref"] = image_ref
+            captured["kwargs"] = kwargs
+            return _FakeRegistryData("sha256:same")
+
+    class _SpyClient:
+        images = _SpyImages()
+
+    infos = [{"image": "ghcr.io/foo/bar:latest"}]
+    containers = [_FakeContainer("sha256:same")]
+    await docker_updates.annotate_update_available(_SpyClient(), containers, infos)
+
+    assert captured["kwargs"].get("auth_config") == {"username": "u", "password": "p"}
+    assert infos[0]["update_available"] is False

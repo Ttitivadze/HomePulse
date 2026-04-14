@@ -112,6 +112,26 @@ class Settings:
             _get("DASHBOARD_REQUIRE_AUTH", "false").lower() == "true"
         )
 
+        # Registry authentication for container update checks.
+        # REGISTRY_AUTH_JSON is expected to be a JSON object of the form:
+        #   {"ghcr.io": {"username": "...", "password": "..."},
+        #    "docker.io": {"username": "...", "password": "..."}}
+        # Empty by default — public images work with no auth.
+        self.REGISTRY_AUTH: dict = {}
+        raw_registry_auth = _get("REGISTRY_AUTH_JSON", "")
+        if raw_registry_auth:
+            try:
+                import json
+                parsed = json.loads(raw_registry_auth)
+                if isinstance(parsed, dict):
+                    self.REGISTRY_AUTH = parsed
+                else:
+                    self.warnings.append(
+                        "REGISTRY_AUTH_JSON must be a JSON object; ignoring"
+                    )
+            except Exception as e:
+                self.warnings.append(f"Failed to parse REGISTRY_AUTH_JSON: {e}")
+
         # Display config from YAML (section toggles, labels)
         self.DISPLAY: dict = {}
         self._load_display_config()

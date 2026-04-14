@@ -31,6 +31,7 @@ import logging
 from typing import Any
 
 from backend import cache
+from backend.config import settings
 
 logger = logging.getLogger("homepulse.docker_updates")
 
@@ -40,6 +41,41 @@ _CACHE_TTL_SECONDS = 6 * 60 * 60
 # Max number of uncached registry lookups per call. Prevents a cold cache
 # on a host with many containers from spiking the rate-limit budget.
 MAX_CHECKS_PER_CYCLE = 3
+
+
+def _registry_host(image_ref: str) -> str:
+    """Return the registry host for an image reference.
+
+    Docker's convention: the first path segment is treated as a registry
+    host when it contains a ``.`` or ``:``, or is ``localhost``. Otherwise
+    the image lives on Docker Hub.
+    """
+    if "/" in image_ref:
+        head = image_ref.split("/", 1)[0]
+        if "." in head or ":" in head or head == "localhost":
+            return head
+    return "docker.io"
+
+
+def _auth_config_for(image_ref: str) -> dict | None:
+    """Look up REGISTRY_AUTH for the image's registry, or None if absent.
+
+    ``settings.REGISTRY_AUTH`` is a dict mapping registry host -> either
+    ``{"username": ..., "password": ...}`` or an already-formed auth dict.
+    Falls back to Docker Hub aliases (``docker.io`` / ``index.docker.io``).
+    """
+    auth_map = getattr(settings, "REGISTRY_AUTH", None) or {}
+    if not auth_map:
+        return None
+    host = _registry_host(image_ref)
+    if host in auth_map:
+        return auth_map[host]
+    # Docker Hub aliases
+    if host == "docker.io" and "index.docker.io" in auth_map:
+        return auth_map["index.docker.io"]
+    if host == "index.docker.io" and "docker.io" in auth_map:
+        return auth_map["docker.io"]
+    return None
 
 
 def _current_digest(container_image) -> str | None:
@@ -56,9 +92,17 @@ def _registry_digest(client, image_ref: str) -> str | None:
 
     Blocking — must be wrapped in asyncio.to_thread by the caller.
     Returns None on any error (network, auth, unknown tag).
+
+    If REGISTRY_AUTH is configured for the image's registry host, that
+    credential is passed through to the Docker SDK; otherwise we rely on
+    the Docker daemon's own auth chain (anonymous for public images).
     """
     try:
-        data = client.images.get_registry_data(image_ref)
+        auth_config = _auth_config_for(image_ref)
+        if auth_config:
+            data = client.images.get_registry_data(image_ref, auth_config=auth_config)
+        else:
+            data = client.images.get_registry_data(image_ref)
         return getattr(data, "id", None) or data.attrs.get("Descriptor", {}).get("digest")
     except Exception as e:  # noqa: BLE001 — registry errors are expected and non-fatal
         logger.debug("Registry lookup failed for %s: %s", image_ref, e)
