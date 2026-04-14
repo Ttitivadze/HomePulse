@@ -10,6 +10,58 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v2.1.0
+
+Minor release focused on broader-market polish: onboarding, CI/CD,
+parity with other homelab dashboards, and internal code quality. No
+breaking changes.
+
+**New widgets**
+- **Bookmarks / app launcher** — Admin-curated grid of quick-launch
+  links on the dashboard. Optional grouping and emoji/image icons.
+  URL allow-list (http/https/mailto) blocks XSS via malicious schemes.
+- **HomePulse Host** — Self-monitoring card showing CPU load, memory
+  usage, system + process uptime, and HomePulse's own RSS, scraped
+  from `/proc`. Competing dashboards don't ship this.
+
+**Distribution & onboarding**
+- **Published Docker image** — `ghcr.io/ttitivadze/homepulse:latest`
+  (multi-arch: `linux/amd64` + `linux/arm64`). End users can
+  `docker compose pull` instead of `docker compose build`.
+- **GitHub Actions CI** — pytest runs on every push to main and on
+  PRs; new status badges in the README.
+- **Multi-stage Dockerfile** — Code changes no longer invalidate the
+  `pip install` layer; local rebuilds are much faster.
+- **PWA manifest + icons** — "Add to Home Screen" installs HomePulse
+  as a standalone app on iOS and Android.
+- **Rewritten Quick Start** — Three paths (GHCR image, minimum-viable
+  `.env`, build from source) so strangers get running in minutes.
+
+**Security & hardening**
+- `DASHBOARD_REQUIRE_AUTH=true` now narrows CORS to
+  `ALLOWED_ORIGINS` instead of leaving `*` wide open. `allow_credentials`
+  is explicitly `False` (no cookies).
+- `Path(ge=1)` on every `{id}` path parameter across settings and
+  api-keys endpoints — zero/negative IDs return 422 instead of
+  reaching the DB layer.
+- `REGISTRY_AUTH_JSON` env var lets operators configure per-registry
+  credentials for private image update checks.
+
+**Code quality**
+- New `backend/integrations/_status.py` exposes `ok()` / `failure()`
+  / `unconfigured()` so every integration returns the same envelope.
+- New `backend.cache.TTL` class centralises every cache TTL — no more
+  magic numbers scattered across modules.
+- `arr.py`'s `_fetch` and `_fetch_tautulli` consolidated around a
+  shared `_api_get` helper.
+- Dead `config.yml` `sections:` block removed (unused since v1.1).
+- Stale OpenClaw references scrubbed from README/CLAUDE.md/.env.example.
+
+**Tests**
+- 128 tests (up from 116). New modules for bookmarks, self-stats;
+  regression cases for Path validation, CORS gating, container-update
+  registry auth, NAS mount statvfs.
+
 ### v2.0.0
 
 Major release. This version consolidates the unreleased 1.3.0 homelab work
@@ -347,6 +399,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `2.1.0` — Bookmarks widget, self-monitoring widget, PWA manifest, multi-arch GHCR image, GitHub Actions CI, multi-stage Dockerfile, shared error-return envelope, central cache TTL policy, CORS hardening + Path(ge=1), private-registry auth, NAS mounts
 - `2.0.0` — Claude chat (replaces OpenClaw), Uptime Kuma + Infrastructure widgets, Telegram notifications, login rate limiting, settings hot-reload, light-theme toggle, container update badges + registry-digest backend, live preview, external API keys, DASHBOARD_REQUIRE_AUTH gate
 - `1.2.4` — Cache-busting static assets, version display in header
 - `1.2.3` — Login form dismisses on successful auth
