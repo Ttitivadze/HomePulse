@@ -142,6 +142,7 @@ async def reset_ui_settings(admin: dict = Depends(require_admin)):
 # Services manageable via the web UI
 SERVICE_KEYS = [
     "PROXMOX_HOST", "PROXMOX_USER", "PROXMOX_TOKEN_NAME", "PROXMOX_TOKEN_VALUE", "PROXMOX_VERIFY_SSL",
+    "DOCKER_URL",
     "RADARR_URL", "RADARR_API_KEY",
     "SONARR_URL", "SONARR_API_KEY",
     "LIDARR_URL", "LIDARR_API_KEY",

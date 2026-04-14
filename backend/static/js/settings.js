@@ -300,6 +300,7 @@ const Settings = {
       const data = await Auth.apiJson('/api/settings/services');
       const groups = {
         'Proxmox': ['PROXMOX_HOST', 'PROXMOX_USER', 'PROXMOX_TOKEN_NAME', 'PROXMOX_TOKEN_VALUE', 'PROXMOX_VERIFY_SSL'],
+        'Docker': ['DOCKER_URL'],
         'Radarr': ['RADARR_URL', 'RADARR_API_KEY'],
         'Sonarr': ['SONARR_URL', 'SONARR_API_KEY'],
         'Lidarr': ['LIDARR_URL', 'LIDARR_API_KEY'],

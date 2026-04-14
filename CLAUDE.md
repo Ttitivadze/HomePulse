@@ -35,7 +35,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`) + SQLite overrides from admin panel
 - **Testing**: pytest + pytest-asyncio, httpx test client
 - **Logging**: Python `logging` module under the `homepulse.*` namespace
-- **Versioning**: Semantic versioning via `VERSION` file (currently 1.1.2)
+- **Versioning**: Semantic versioning via `VERSION` file (currently 1.2.0)
 
 ## Repository Structure
 
@@ -76,7 +76,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── test_cache.py        # TTL cache unit tests
 │   ├── test_auth.py         # Auth system tests (setup, login, JWT, status)
 │   └── test_settings.py     # Settings tests (UI, users, services, validation)
-├── VERSION                  # Semantic version (1.1.2)
+├── VERSION                  # Semantic version (1.2.0)
 ├── LICENSE                  # MIT License
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, data, docs from Docker image
@@ -257,7 +257,8 @@ Key patterns:
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
 
-- `1.1.2` — Performance optimizations, mobile UX, code cleanup (current)
+- `1.2.0` — Multi-instance Proxmox/Docker support, UI improvements, download queue filtering (current)
+- `1.1.2` — Performance optimizations, mobile UX, code cleanup
 - `1.1.1` — Security hardening, input validation, XSS fixes
 - `1.1.0` — Account system, admin settings panel, UI customization
 - `1.0.0` — First stable public release

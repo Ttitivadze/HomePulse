@@ -57,6 +57,9 @@ class Settings:
             _get("PROXMOX_VERIFY_SSL", "false").lower() == "true"
         )
 
+        # Docker
+        self.DOCKER_URL: str = _get("DOCKER_URL").rstrip("/")
+
         # Radarr
         self.RADARR_URL: str = _get("RADARR_URL").rstrip("/")
         self.RADARR_API_KEY: str = _get("RADARR_API_KEY")
