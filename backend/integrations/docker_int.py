@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import settings
 from backend import cache, database as db
+from backend.integrations.docker_updates import annotate_update_available
 
 logger = logging.getLogger("homepulse.docker")
 
@@ -99,6 +100,15 @@ async def _fetch_containers(client, host_url: str) -> dict:
             if isinstance(stats, Exception):
                 stats = {"cpu_percent": 0, "mem_usage": 0, "mem_limit": 0}
             info.update(stats)
+
+        # Annotate update_available using the registry. Cached for 6 h per
+        # image ref; capped at MAX_CHECKS_PER_CYCLE uncached lookups.
+        try:
+            await annotate_update_available(client, containers, container_info)
+        except Exception:
+            logger.exception("Container update annotation failed")
+            for info in container_info:
+                info.setdefault("update_available", None)
 
         return {"configured": True, "containers": container_info, "host_url": host_url, "docker_links": settings.docker_links}
     except Exception:
