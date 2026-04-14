@@ -6,6 +6,11 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v1.2.1
+- **Bugfix**: Docker socket permission detection — shows "Docker socket mounted but not accessible" instead of "not configured" when the container user lacks socket group permissions
+- **Config**: New `DOCKER_GID` env var passed via `group_add` in docker-compose.yml so the non-root container can access the host Docker socket
+- **Docs**: Updated README, `.env.example`, and CLAUDE.md with Docker socket setup instructions
+
 ### v1.2.0
 - **Multi-instance support** — Connect multiple Proxmox VE and Docker hosts, managed entirely through the admin panel with "Add Instance" buttons (no `.env` clutter)
 - **Docker card overhaul** — Removed image tag and port text; added clickable service link (opens container's web UI in a new tab); status badge moved to top-left
@@ -92,6 +97,7 @@ All integrations are optional — configure only the services you use.
 | `PROXMOX_TOKEN_VALUE` | API token value |
 | `PROXMOX_VERIFY_SSL` | Verify SSL cert (`true`/`false`, default: `false`) |
 | **Docker** | |
+| `DOCKER_GID` | Host Docker group ID for socket access (find with `stat -c '%g' /var/run/docker.sock`) |
 | `DOCKER_URL` | Base URL for container web links (e.g. `http://192.168.1.100`) |
 | **Radarr / Sonarr / Lidarr** | |
 | `RADARR_URL`, `RADARR_API_KEY` | Radarr instance |
@@ -220,13 +226,14 @@ tests/                   # pytest test suite
 - **Healthcheck** built into both Dockerfile and Compose
 - **Log rotation**: 3 x 10MB max to prevent disk bloat
 - **Memory limit**: 512MB (configurable in `docker-compose.yml`)
-- **Docker socket**: Mounted read-only for container monitoring
+- **Docker socket**: Mounted read-only for container monitoring. The container runs as a non-root user, so you **must** set `DOCKER_GID` in `.env` to the host Docker group ID (run `stat -c '%g' /var/run/docker.sock` to find it). Without this, the dashboard will show "Docker socket mounted but not accessible".
 - **Port**: Host 8450 -> Container 8000
 
 ## Versioning
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `1.2.1` — Fix Docker socket permission detection, add DOCKER_GID config
 - `1.2.0` — Multi-instance Proxmox/Docker, UI improvements, download queue filtering
 - `1.1.2` — Performance optimizations, mobile UX, code cleanup
 - `1.1.1` — Security hardening, input validation, XSS fixes

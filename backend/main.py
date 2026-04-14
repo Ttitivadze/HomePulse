@@ -27,7 +27,7 @@ from backend.config import settings
 logger = logging.getLogger("homepulse")
 
 _version_file = Path(__file__).parent.parent / "VERSION"
-__version__ = _version_file.read_text().strip() if _version_file.is_file() else "1.2.0"
+__version__ = _version_file.read_text().strip() if _version_file.is_file() else "1.2.1"
 
 
 @asynccontextmanager

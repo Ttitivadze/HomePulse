@@ -35,7 +35,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`) + SQLite overrides from admin panel
 - **Testing**: pytest + pytest-asyncio, httpx test client
 - **Logging**: Python `logging` module under the `homepulse.*` namespace
-- **Versioning**: Semantic versioning via `VERSION` file (currently 1.2.0)
+- **Versioning**: Semantic versioning via `VERSION` file (currently 1.2.1)
 
 ## Repository Structure
 
@@ -77,7 +77,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── test_auth.py         # Auth system tests (setup, login, JWT, status)
 │   ├── test_settings.py     # Settings tests (UI, users, services, validation)
 │   └── test_instances.py    # Service instance CRUD tests (multi-instance)
-├── VERSION                  # Semantic version (1.2.0)
+├── VERSION                  # Semantic version (1.2.1)
 ├── LICENSE                  # MIT License
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, data, docs from Docker image
@@ -255,16 +255,18 @@ Key patterns:
 - **PYTHONUNBUFFERED=1**: Ensures real-time log output in `docker logs`
 - **`.dockerignore`**: Excludes tests, .git, data, cache, and docs from the image
 - The Docker socket is mounted read-only (`/var/run/docker.sock:/var/run/docker.sock:ro`) for container monitoring
+- **Docker socket permissions**: The container runs as non-root user `homepulse`. The host Docker socket is typically owned by `root:docker` with group-only access. `DOCKER_GID` in `.env` is passed via `group_add` in Compose so the container process can read the socket. Without it, the dashboard shows "Docker socket mounted but not accessible". Find the GID with `stat -c '%g' /var/run/docker.sock`.
 - `config/config.yml` is also mounted read-only
 - `homepulse_data` named volume persists the SQLite database across container recreates
-- The container runs as a non-root `homepulse` user with `/app/data` owned by that user (Docker socket access requires group-add at runtime)
+- The container runs as a non-root `homepulse` user with `/app/data` owned by that user
 - Port mapping: host 8450 -> container 8000
 
 ## Versioning
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
 
-- `1.2.0` — Multi-instance Proxmox/Docker support, UI improvements, download queue filtering (current)
+- `1.2.1` — Fix Docker socket permission detection, add DOCKER_GID config (current)
+- `1.2.0` — Multi-instance Proxmox/Docker support, UI improvements, download queue filtering
 - `1.1.2` — Performance optimizations, mobile UX, code cleanup
 - `1.1.1` — Security hardening, input validation, XSS fixes
 - `1.1.0` — Account system, admin settings panel, UI customization

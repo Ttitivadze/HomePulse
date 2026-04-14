@@ -5,6 +5,11 @@ services:
     restart: unless-stopped
     ports:
       - "8450:8000"
+    # Grant access to the host Docker socket.
+    # Find your host Docker GID with: stat -c '%g' /var/run/docker.sock
+    # Then set DOCKER_GID in .env (e.g. DOCKER_GID=996)
+    group_add:
+      - "${DOCKER_GID:-0}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./config/config.yml:/app/config/config.yml:ro

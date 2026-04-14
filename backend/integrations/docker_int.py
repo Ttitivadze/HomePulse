@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 
 import docker
 from fastapi import APIRouter, HTTPException
@@ -12,11 +13,35 @@ logger = logging.getLogger("homepulse.docker")
 
 router = APIRouter()
 
+# Socket path used by docker.from_env()
+_DOCKER_SOCKET = os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")
+_DOCKER_SOCKET_PATH = _DOCKER_SOCKET.replace("unix://", "") if _DOCKER_SOCKET.startswith("unix://") else None
+
+
+def _check_socket_access() -> str | None:
+    """Return an error string if the Docker socket exists but isn't accessible, else None."""
+    if _DOCKER_SOCKET_PATH and os.path.exists(_DOCKER_SOCKET_PATH):
+        if not os.access(_DOCKER_SOCKET_PATH, os.R_OK | os.W_OK):
+            return (
+                "Docker socket mounted but not accessible — add the host Docker "
+                "group to the container (set DOCKER_GID in .env and restart)"
+            )
+    return None
+
 
 def _get_client():
     try:
-        return docker.from_env()
-    except docker.errors.DockerException:
+        client = docker.from_env()
+        client.ping()
+        return client
+    except PermissionError:
+        logger.warning("Docker socket permission denied at %s", _DOCKER_SOCKET)
+        return None
+    except docker.errors.DockerException as e:
+        if "Permission denied" in str(e) or "PermissionError" in str(e):
+            logger.warning("Docker socket permission denied: %s", e)
+        else:
+            logger.debug("Docker not available: %s", e)
         return None
 
 
@@ -85,8 +110,13 @@ async def _fetch_containers(client, host_url: str) -> dict:
 
 async def fetch_docker_data() -> dict:
     """Fetch Docker container data from the local socket. Returns a dict; never raises."""
-    client = _get_client()
+    client = await asyncio.to_thread(_get_client)
     if not client:
+        # Distinguish "not mounted" from "mounted but no permissions"
+        access_err = _check_socket_access()
+        if access_err:
+            logger.warning(access_err)
+            return {"configured": True, "containers": [], "host_url": settings.DOCKER_URL, "error": access_err}
         return {"configured": False, "containers": []}
 
     return await _fetch_containers(client, settings.DOCKER_URL)
