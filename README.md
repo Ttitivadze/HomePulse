@@ -6,6 +6,11 @@ A self-hosted monitoring dashboard for your homelab. See your entire infrastruct
 
 ## Changelog
 
+### v1.2.4
+- **Cache-busting**: All CSS/JS references now include `?v={version}` query params — browsers automatically fetch fresh files on redeploy, no manual cache clearing needed
+- **Version in header**: App version displayed next to "HomePulse" title in the header
+- **Cache headers**: `Cache-Control: no-cache` on index.html (always check for updates), `Cache-Control: public, max-age=86400` on static assets (cached 24h, busted by version param)
+
 ### v1.2.3
 - **UX**: Login form now dismisses on successful authentication and reopens directly into the settings panel — no lingering login window
 
@@ -241,6 +246,7 @@ tests/                   # pytest test suite
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The current version is in the `VERSION` file.
 
+- `1.2.4` — Cache-busting static assets, version display in header
 - `1.2.3` — Login form dismisses on successful auth
 - `1.2.2` — Defensive frontend rendering, distinguish render errors from API failures
 - `1.2.1` — Fix Docker socket permission detection, add DOCKER_GID config

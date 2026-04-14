@@ -35,7 +35,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 - **Config**: Environment variables via python-dotenv + YAML display config (`config/config.yml`) + SQLite overrides from admin panel
 - **Testing**: pytest + pytest-asyncio, httpx test client
 - **Logging**: Python `logging` module under the `homepulse.*` namespace
-- **Versioning**: Semantic versioning via `VERSION` file (currently 1.2.3)
+- **Versioning**: Semantic versioning via `VERSION` file (currently 1.2.4)
 
 ## Repository Structure
 
@@ -77,7 +77,7 @@ HomePulse is a Docker-hosted monitoring dashboard for homelab infrastructure. Py
 │   ├── test_auth.py         # Auth system tests (setup, login, JWT, status)
 │   ├── test_settings.py     # Settings tests (UI, users, services, validation)
 │   └── test_instances.py    # Service instance CRUD tests (multi-instance)
-├── VERSION                  # Semantic version (1.2.3)
+├── VERSION                  # Semantic version (1.2.4)
 ├── LICENSE                  # MIT License
 ├── .env.example             # All environment variables with descriptions
 ├── .dockerignore            # Excludes tests, .git, data, docs from Docker image
@@ -265,7 +265,8 @@ Key patterns:
 
 HomePulse uses [Semantic Versioning](https://semver.org/). The version is stored in the `VERSION` file at the repo root and referenced in `backend/main.py`.
 
-- `1.2.3` — Login form dismisses on successful auth, reopens straight into settings panel (current)
+- `1.2.4` — Cache-busting static assets, version display in header (current)
+- `1.2.3` — Login form dismisses on successful auth, reopens straight into settings panel
 - `1.2.2` — Defensive frontend rendering, distinguish render errors from API failures
 - `1.2.1` — Fix Docker socket permission detection, add DOCKER_GID config
 - `1.2.0` — Multi-instance Proxmox/Docker support, UI improvements, download queue filtering

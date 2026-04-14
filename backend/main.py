@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pathlib import Path
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -27,7 +27,7 @@ from backend.config import settings
 logger = logging.getLogger("homepulse")
 
 _version_file = Path(__file__).parent.parent / "VERSION"
-__version__ = _version_file.read_text().strip() if _version_file.is_file() else "1.2.3"
+__version__ = _version_file.read_text().strip() if _version_file.is_file() else "1.2.4"
 
 
 @asynccontextmanager
@@ -85,6 +85,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # Cache static assets (version query param busts cache on redeploy)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "public, max-age=86400"
         return response
 
 
@@ -110,10 +113,14 @@ app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+# Read index.html template once at startup; version placeholder replaced per-request
+_index_template = (static_dir / "index.html").read_text()
+
 
 @app.get("/")
 async def root():
-    return FileResponse(str(static_dir / "index.html"))
+    html = _index_template.replace("__APP_VERSION__", __version__)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/health")
